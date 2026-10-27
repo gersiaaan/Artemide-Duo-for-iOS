@@ -1,30 +1,56 @@
-name: Build VoidLink IPA
+name: Artemide Duo for iOS
 
 on:
   push:
-    branches: [ "feat/frame_pacing_metal" ]
+    branches: [ "artemide" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: Build VoidLink IPA
+    name: Build unsigned IPA
     runs-on: macos-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Checkout submodules
-        run: "git submodule update --init --recursive"
+      - name: Version
+        id: ver
+        run: echo "v=$(cat IOS_VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Build VoidLink
+      - name: Build
         run: |
-          xcodebuild -verbose -scheme VoidLink -sdk iphoneos -configuration Debug archive -archivePath $PWD/build/VoidLink.xcarchive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED="NO" CODE_SIGN_ENTITLEMENTS="" CODE_SIGNING_ALLOWED="NO"
-          mkdir -p ./build/IPA && mkdir -p ./build/IPA/Payload
-          cp -r ./build/VoidLink.xcarchive/Products/Applications/VoidLink.app ./build/IPA/Payload/VoidLink.app
-          cd ./build/IPA && zip -r ../../build/VoidLink.ipa ./Payload/* && cd ../..
+          set -o pipefail
+          xcodebuild -project VoidLink.xcodeproj -scheme VoidLink -sdk iphoneos -configuration Release \
+            -archivePath "$PWD/build/ArtemideDuo.xcarchive" archive \
+            MARKETING_VERSION=${{ steps.ver.outputs.v }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGN_ENTITLEMENTS="" CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E "error:|warning: unable|\*\* (ARCHIVE|BUILD)" || true
+          test -d "build/ArtemideDuo.xcarchive/Products/Applications"
 
-      - name: Upload VoidLink IPA to Artifacts
+      - name: Package IPA
+        run: |
+          APP=$(ls -d build/ArtemideDuo.xcarchive/Products/Applications/*.app | head -1)
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          cd build && zip -qry "ArtemideDuo-iOS-v${{ steps.ver.outputs.v }}.ipa" Payload
+
+      - name: Upload build log on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: VoidLink.ipa
-          path: build/VoidLink.ipa
+          name: build-log
+          path: build.log
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-v${{ steps.ver.outputs.v }}-${{ github.run_number }}
+          name: Artemide Duo for iOS v${{ steps.ver.outputs.v }} (build ${{ github.run_number }})
+          prerelease: true
+          files: build/ArtemideDuo-iOS-v${{ steps.ver.outputs.v }}.ipa

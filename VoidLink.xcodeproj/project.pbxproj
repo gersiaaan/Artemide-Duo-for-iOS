@@ -2095,7 +2095,7 @@
 				MARKETING_VERSION = 0.0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(PROJECT_DIR)/libs/opus/lib/iOS/libopus.a";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "$(PROJECT_DIR)/libs/opus/lib/iOS-Sim/libopus.a";
-				PRODUCT_BUNDLE_IDENTIFIER = com.voidlink.tf.debug10.iOS;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gersiaaan.artemideduo.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -2166,7 +2166,7 @@
 				MARKETING_VERSION = 0.0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(PROJECT_DIR)/libs/opus/lib/iOS/libopus.a";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "$(PROJECT_DIR)/libs/opus/lib/iOS-Sim/libopus.a";
-				PRODUCT_BUNDLE_IDENTIFIER = com.voidlink.tf.iOS;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gersiaaan.artemideduo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
 				SKIP_INSTALL = NO;
