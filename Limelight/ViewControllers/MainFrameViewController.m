@@ -1210,7 +1210,6 @@ static NSMutableSet* hostList;
     [self.navigationController setNavigationBarHidden:YES animated:NO];
     [_duoRoot.superview bringSubviewToFront:_duoRoot];
     [[DuoPad shared] attach];
-    [self becomeFirstResponder];
     NSString* summary = [StreamFrameViewController duoTakeSessionSummary];
     if (summary != nil) {
         DuoToast(_duoRoot, summary);
@@ -1596,12 +1595,9 @@ static NSMutableSet* hostList;
 #if !TARGET_OS_TV
 #pragma mark - Artemide Duo hardware keyboard
 
-- (BOOL)canBecomeFirstResponder {
-    return YES;
-}
-
 - (NSArray<UIKeyCommand*>*)keyCommands {
-    if (_duoRoot.hidden || self.presentedViewController != nil) {
+    // Only once our screen is on and in front.
+    if (_duoRoot == nil || _duoRoot.hidden || self.presentedViewController != nil || self.view.window == nil) {
         return @[];
     }
     return [DuoPad keyCommandsWithAction:@selector(duoKeyCommand:)];
