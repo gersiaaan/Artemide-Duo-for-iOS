@@ -9,6 +9,7 @@
 #import "SettingsViewController.h"
 #import "TemporarySettings.h"
 #import "DataManager.h"
+#import "DuoSupport.h"
 
 #import <VideoToolbox/VideoToolbox.h>
 #import <AVFoundation/AVFoundation.h>
@@ -16,6 +17,7 @@
 @implementation SettingsViewController {
     NSInteger _bitrate;
     NSInteger _lastSelectedResolutionIndex;
+    NSArray<UIView*>* _duoViews;
 }
 
 @dynamic overrideUserInterfaceStyle;
@@ -70,6 +72,7 @@ CGSize resolutionTable[RESOLUTION_TABLE_SIZE];
 // This view is rooted at a ScrollView. To make it scrollable,
 // we'll update content size here.
 -(void)viewDidLayoutSubviews {
+    [self layoutDuoSection];
     CGFloat highestViewY = 0;
     
     // Enumerate the scroll view's subviews looking for the
@@ -159,7 +162,12 @@ BOOL isCustomResolution(CGSize res) {
     resolutionTable[4] = CGSizeMake(safeAreaWidth, fullScreenHeight);
     // Artemide Duo: full device resolution, always in landscape (2388x1668 on the iPad Pro 11"),
     // independent of how the iPad was held when Settings opened.
-    resolutionTable[5] = CGSizeMake(MAX(fullScreenWidth, fullScreenHeight), MIN(fullScreenWidth, fullScreenHeight));
+    CGSize native = [UIScreen mainScreen].nativeBounds.size;
+    resolutionTable[5] = CGSizeMake(MAX(MAX(fullScreenWidth, fullScreenHeight), MAX(native.width, native.height)),
+                                    MAX(MIN(fullScreenWidth, fullScreenHeight), MIN(native.width, native.height)));
+    if ([DuoPrefs isIPadPro11FirstGen]) {
+        resolutionTable[5] = CGSizeMake(2388, 1668);
+    }
     resolutionTable[6] = CGSizeMake([currentSettings.width integerValue], [currentSettings.height integerValue]); // custom initial value
     
     // Don't populate the custom entry unless we have a custom resolution
@@ -253,8 +261,10 @@ BOOL isCustomResolution(CGSize res) {
     [self.audioOnPCSelector setSelectedSegmentIndex:currentSettings.playAudioOnPC ? 1 : 0];
     NSInteger onscreenControls = [currentSettings.onscreenControls integerValue];
     _lastSelectedResolutionIndex = resolution;
-    if ((int) resolutionTable[5].width == 2388 && (int) resolutionTable[5].height == 1668) {
+    if ([DuoPrefs isIPadPro11FirstGen] || ((int) resolutionTable[5].width == 2388 && (int) resolutionTable[5].height == 1668)) {
         [self.resolutionSelector setTitle:@"iPad Pro 11\"" forSegmentAtIndex:5];
+    } else {
+        [self.resolutionSelector setTitle:@"Device" forSegmentAtIndex:5];
     }
     [self.resolutionSelector setSelectedSegmentIndex:resolution];
     [self.resolutionSelector addTarget:self action:@selector(newResolutionChosen) forControlEvents:UIControlEventValueChanged];
@@ -268,6 +278,116 @@ BOOL isCustomResolution(CGSize res) {
     [self.bitrateSlider addTarget:self action:@selector(bitrateSliderMoved) forControlEvents:UIControlEventValueChanged];
     [self updateBitrateText];
     [self updateResolutionDisplayViewText];
+
+    [self buildDuoSection];
+    [self applyDuoTheme];
+}
+
+#pragma mark - Artemide Duo
+
+- (UISegmentedControl*)duoToggle:(BOOL)on action:(SEL)action {
+    UISegmentedControl* c = [[UISegmentedControl alloc] initWithItems:@[@"Off", @"On"]];
+    c.selectedSegmentIndex = on ? 1 : 0;
+    [c addTarget:self action:action forControlEvents:UIControlEventValueChanged];
+    return c;
+}
+
+- (UILabel*)duoLabel:(NSString*)text size:(CGFloat)size color:(UIColor*)color {
+    UILabel* l = [[UILabel alloc] init];
+    l.text = text;
+    l.numberOfLines = 0;
+    l.font = [DuoTheme font:size weight:UIFontWeightRegular];
+    l.textColor = color;
+    return l;
+}
+
+- (void)buildDuoSection {
+    UILabel* header = [[UILabel alloc] init];
+    NSMutableAttributedString* t = [[NSMutableAttributedString alloc] initWithString:@"ARTEMIDE DUO" attributes:@{
+        NSKernAttributeName: @3, NSFontAttributeName: [DuoTheme font:15 weight:UIFontWeightSemibold],
+        NSForegroundColorAttributeName: [DuoTheme text]}];
+    [t addAttribute:NSForegroundColorAttributeName value:[DuoTheme accent] range:NSMakeRange(9, 3)];
+    header.attributedText = t;
+
+    UILabel* vdLabel = [self duoLabel:@"Virtual display" size:17 color:[DuoTheme text]];
+    UISegmentedControl* vd = [self duoToggle:[DuoPrefs virtualDisplay] action:@selector(duoVirtualDisplayChanged:)];
+    UILabel* vdHint = [self duoLabel:@"Apollo / Vibeshine create a display in exactly the stream resolution and frame rate, and remove it when you quit." size:12 color:[DuoTheme text3]];
+
+    UILabel* cbLabel = [self duoLabel:@"Clipboard sync" size:17 color:[DuoTheme text]];
+    UISegmentedControl* cb = [self duoToggle:[DuoPrefs clipboardSync] action:@selector(duoClipboardChanged:)];
+    UILabel* cbHint = [self duoLabel:@"Text you copied on the iPad goes to the PC when the stream starts; text copied on the PC comes back when you leave the stream (Apollo / Vibeshine)." size:12 color:[DuoTheme text3]];
+
+    NSString* version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
+    UILabel* about = [self duoLabel:[NSString stringWithFormat:@"Artemide Duo for iOS v%@\nDeveloped by Chang Cao, 2026\nBased on Moonlight for iOS", version] size:12 color:[DuoTheme text2]];
+
+    _duoViews = @[header, vdLabel, vd, vdHint, cbLabel, cb, cbHint, about];
+    for (UIView* v in _duoViews) {
+        [self.scrollView addSubview:v];
+    }
+}
+
+- (void)layoutDuoSection {
+    if (_duoViews == nil) {
+        return;
+    }
+    CGFloat bottom = 0;
+    CGFloat x = self.resolutionSelector.frame.origin.x;
+    CGFloat width = MAX(self.resolutionSelector.frame.size.width, 280);
+    for (UIView* view in self.scrollView.subviews) {
+        if ([_duoViews containsObject:view]) {
+            continue;
+        }
+        if (![view isKindOfClass:[UILabel class]] && ![view isKindOfClass:[UISegmentedControl class]] && ![view isKindOfClass:[UISlider class]]) {
+            continue;
+        }
+        bottom = MAX(bottom, CGRectGetMaxY(view.frame));
+    }
+    CGFloat y = bottom + 34;
+    NSArray<NSNumber*>* gapAfter = @[@14, @6, @6, @18, @6, @6, @26, @0];
+    for (NSUInteger i = 0; i < _duoViews.count; i++) {
+        UIView* v = _duoViews[i];
+        CGFloat h;
+        if ([v isKindOfClass:[UISegmentedControl class]]) {
+            h = 32;
+            v.frame = CGRectMake(x, y, 160, h);
+        } else {
+            h = ceil([v sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height);
+            v.frame = CGRectMake(x, y, width, h);
+        }
+        y += h + gapAfter[i].doubleValue;
+    }
+}
+
+- (void)duoVirtualDisplayChanged:(UISegmentedControl*)sender {
+    [DuoPrefs setVirtualDisplay:sender.selectedSegmentIndex == 1];
+}
+
+- (void)duoClipboardChanged:(UISegmentedControl*)sender {
+    [DuoPrefs setClipboardSync:sender.selectedSegmentIndex == 1];
+}
+
+- (void)applyDuoTheme {
+    self.view.backgroundColor = [DuoTheme floor];
+    self.scrollView.backgroundColor = [DuoTheme floor];
+    self.scrollView.indicatorStyle = UIScrollViewIndicatorStyleWhite;
+    NSDictionary* normal = @{NSForegroundColorAttributeName: [DuoTheme text2], NSFontAttributeName: [DuoTheme font:13 weight:UIFontWeightMedium]};
+    NSDictionary* selected = @{NSForegroundColorAttributeName: [DuoTheme hex:0x00262C], NSFontAttributeName: [DuoTheme font:13 weight:UIFontWeightSemibold]};
+    for (UIView* v in self.scrollView.subviews) {
+        if ([v isKindOfClass:[UISegmentedControl class]]) {
+            UISegmentedControl* c = (UISegmentedControl*)v;
+            c.selectedSegmentTintColor = [DuoTheme accent];
+            c.backgroundColor = [UIColor colorWithWhite:1 alpha:0.06];
+            [c setTitleTextAttributes:normal forState:UIControlStateNormal];
+            [c setTitleTextAttributes:selected forState:UIControlStateSelected];
+        } else if ([v isKindOfClass:[UISlider class]]) {
+            ((UISlider*)v).minimumTrackTintColor = [DuoTheme accent];
+            ((UISlider*)v).maximumTrackTintColor = [UIColor colorWithWhite:1 alpha:0.12];
+        } else if ([v isKindOfClass:[UILabel class]] && ![_duoViews containsObject:v]) {
+            ((UILabel*)v).textColor = [DuoTheme text];
+            ((UILabel*)v).font = [DuoTheme font:16 weight:UIFontWeightMedium];
+        }
+    }
+    self.resolutionDisplayView.backgroundColor = [DuoTheme cardHigh];
 }
 
 - (void) touchModeChanged {

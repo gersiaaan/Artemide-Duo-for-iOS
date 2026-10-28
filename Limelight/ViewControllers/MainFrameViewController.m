@@ -26,6 +26,8 @@
 #import "TemporaryApp.h"
 #import "IdManager.h"
 #import "ConnectionHelper.h"
+#import "DuoHomeView.h"
+#import "DuoSupport.h"
 
 #if !TARGET_OS_TV
 #import "SettingsViewController.h"
@@ -36,6 +38,11 @@
 #import <VideoToolbox/VideoToolbox.h>
 
 #include <Limelight.h>
+
+#if !TARGET_OS_TV
+@interface MainFrameViewController () <DuoHomeDelegate>
+@end
+#endif
 
 @implementation MainFrameViewController {
     NSOperationQueue* _opQueue;
@@ -53,6 +60,10 @@
     NSArray* _sortedAppList;
     NSCache* _boxArtCache;
     bool _background;
+#if !TARGET_OS_TV
+    DuoHomeView* _duoHome;
+    TemporaryApp* _duoStreamApp;
+#endif
 #if TARGET_OS_TV
     UITapGestureRecognizer* _menuRecognizer;
 #endif
@@ -304,6 +315,9 @@ static NSMutableSet* hostList;
     
     [self.collectionView reloadData];
     [self.view addSubview:hostScrollView];
+#if !TARGET_OS_TV
+    [_duoHome showHostPage];
+#endif
 }
 
 - (void) receivedAssetForApp:(TemporaryApp*)app {
@@ -313,6 +327,9 @@ static NSMutableSet* hostList;
     
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.collectionView reloadData];
+#if !TARGET_OS_TV
+        [self->_duoHome refresh];
+#endif
     });
 }
 
@@ -602,6 +619,9 @@ static NSMutableSet* hostList;
 }
 
 - (void) prepareToStreamApp:(TemporaryApp *)app {
+#if !TARGET_OS_TV
+    _duoStreamApp = app;
+#endif
     _streamConfig = [[StreamConfiguration alloc] init];
     _streamConfig.host = app.host.activeAddress;
     _streamConfig.httpsPort = app.host.httpsPort;
@@ -875,6 +895,7 @@ static NSMutableSet* hostList;
     // If we moved back to the center position, we should save the settings
     if (position == FrontViewPositionLeft) {
         [(SettingsViewController*)[revealController rearViewController] saveSettings];
+        [_duoHome refresh];
     }
     
     currentPosition = position;
@@ -891,6 +912,12 @@ static NSMutableSet* hostList;
     if ([segue.destinationViewController isKindOfClass:[StreamFrameViewController class]]) {
         StreamFrameViewController* streamFrame = segue.destinationViewController;
         streamFrame.streamConfig = _streamConfig;
+#if !TARGET_OS_TV
+        if (_duoStreamApp != nil) {
+            streamFrame.duoCover = [_boxArtCache objectForKey:_duoStreamApp];
+            streamFrame.duoHostName = _duoStreamApp.host.name;
+        }
+#endif
     }
 }
 
@@ -996,6 +1023,19 @@ static NSMutableSet* hostList;
     
     [self retrieveSavedHosts];
     _discMan = [[DiscoveryManager alloc] initWithHosts:[hostList allObjects] andCallback:self];
+
+#if !TARGET_OS_TV
+    // Artemide Duo: our own host page and app list on top of Moonlight's screen.
+    UIView* duoParent = self.navigationController.view ?: self.view;
+    _duoHome = [[DuoHomeView alloc] initWithFrame:duoParent.bounds];
+    _duoHome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _duoHome.delegate = self;
+    [duoParent addSubview:_duoHome];
+    [_duoHome addGestureRecognizer:self.revealViewController.tapGestureRecognizer];
+    @synchronized (hostList) {
+        [_duoHome setHosts:[hostList allObjects]];
+    }
+#endif
         
     if ([hostList count] == 1) {
         [self hostClicked:[hostList anyObject] view:nil];
@@ -1100,7 +1140,13 @@ static NSMutableSet* hostList;
     [[self revealViewController] setPrimaryViewController:self];
 #endif
     
+#if TARGET_OS_TV
     [self.navigationController setNavigationBarHidden:NO animated:YES];
+#else
+    [self.navigationController setNavigationBarHidden:YES animated:NO];
+    _duoHome.hidden = NO;
+    [_duoHome.superview bringSubviewToFront:_duoHome];
+#endif
     
     // Hide 1px border line
     UIImage* fakeImage = [[UIImage alloc] init];
@@ -1138,6 +1184,19 @@ static NSMutableSet* hostList;
     // for that which would normally fire beginForegroundRefresh.
     [self beginForegroundRefresh];
 }
+
+#if !TARGET_OS_TV
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    // The overlay lives on the navigation controller's view, so hide it while streaming.
+    _duoHome.hidden = YES;
+}
+
+- (UIStatusBarStyle)preferredStatusBarStyle {
+    return UIStatusBarStyleLightContent;
+}
+#endif
 
 - (void)viewDidDisappear:(BOOL)animated
 {
@@ -1255,6 +1314,12 @@ static NSMutableSet* hostList;
     
     [hostScrollView addSubview:addComp];
     [hostScrollView setContentSize:CGSizeMake(prevEdge + addComp.frame.size.width, hostScrollView.frame.size.height)];
+
+#if !TARGET_OS_TV
+    @synchronized (hostList) {
+        [_duoHome setHosts:[hostList allObjects]];
+    }
+#endif
 }
 
 - (float) getCompViewX:(UIComputerView*)comp addComp:(UIComputerView*)addComp prevEdge:(float)prevEdge {
@@ -1341,6 +1406,9 @@ static NSMutableSet* hostList;
     
     [hostScrollView removeFromSuperview];
     [self.collectionView reloadData];
+#if !TARGET_OS_TV
+    [_duoHome showApps:_sortedAppList host:host cache:_boxArtCache];
+#endif
 }
 
 - (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
@@ -1436,5 +1504,75 @@ static NSMutableSet* hostList;
     [context.previouslyFocusedView setAlpha:1.0];
 #endif
 }
+
+#if !TARGET_OS_TV
+#pragma mark - Artemide Duo home
+
+- (void)duoOpenHost:(TemporaryHost*)host view:(UIView*)view {
+    [self hostClicked:host view:view];
+}
+
+- (void)duoHostOptions:(TemporaryHost*)host view:(UIView*)view {
+    [self hostLongClicked:host view:view];
+}
+
+- (void)duoAddHost {
+    [self addHostClicked];
+}
+
+- (void)duoOpenApp:(TemporaryApp*)app view:(UIView*)view {
+    [self appClicked:app view:view];
+}
+
+- (void)duoAppOptions:(TemporaryApp*)app view:(UIView*)view {
+    [self appLongClicked:app view:view];
+}
+
+- (void)duoOpenSettings {
+    [self.revealViewController revealToggleAnimated:YES];
+}
+
+- (void)duoBackToHosts {
+    [self showHostSelectionView];
+}
+
+- (void)duoQuitAll:(TemporaryHost*)host {
+    [_appManager stopRetrieving];
+    [self showLoadingFrame:^{
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            HttpManager* hMan = [[HttpManager alloc] initWithHost:host];
+            HttpResponse* quitResponse = [[HttpResponse alloc] init];
+            [self->_discMan pauseDiscoveryForHost:host];
+            [hMan executeRequestSynchronously:[HttpRequest requestForResponse:quitResponse withUrlRequest:[hMan newQuitAppRequest]]];
+            if (quitResponse.statusCode == 200) {
+                ServerInfoResponse* serverInfoResp = [[ServerInfoResponse alloc] init];
+                [hMan executeRequestSynchronously:[HttpRequest requestForResponse:serverInfoResp withUrlRequest:[hMan newServerInfoRequest:false]
+                                                                    fallbackError:401 fallbackRequest:[hMan newHttpServerInfoRequest]]];
+                if ([serverInfoResp isStatusOk]) {
+                    [serverInfoResp populateHost:host];
+                } else {
+                    host.currentGame = @"0";
+                }
+            }
+            [self->_discMan resumeDiscoveryForHost:host];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self hideLoadingFrame:^{
+                    if (quitResponse.statusCode != 200) {
+                        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Quit all sessions"
+                                                                                       message:@"The host did not end the session. If it was started by another device, quit it there."
+                                                                                preferredStyle:UIAlertControllerStyleAlert];
+                        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+                        [[self activeViewController] presentViewController:alert animated:YES completion:nil];
+                    }
+                    if (host == self->_selectedHost) {
+                        [self updateAppsForHost:host];
+                    }
+                    [self updateHosts];
+                }];
+            });
+        });
+    }];
+}
+#endif
 
 @end

@@ -12,6 +12,9 @@
 #import "StreamManager.h"
 #import "ControllerSupport.h"
 #import "DataManager.h"
+#import "HttpManager.h"
+#import "DuoSupport.h"
+#import "DuoConnectOverlay.h"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -43,6 +46,8 @@
     UILabel *_stageLabel;
     UILabel *_tipLabel;
     UIActivityIndicatorView *_spinner;
+    DuoConnectOverlay *_duoConnect;
+    BOOL _duoClipboardPulled;
     StreamView *_streamView;
     UIScrollView *_scrollView;
     BOOL _userIsInteracting;
@@ -209,6 +214,57 @@
     [self.view addSubview:_stageLabel];
     [self.view addSubview:_spinner];
     [self.view addSubview:_tipLabel];
+
+#if !TARGET_OS_TV
+    // Artemide Duo stream-start screen replaces Moonlight's label + spinner.
+    _stageLabel.hidden = YES;
+    _spinner.hidden = YES;
+    _tipLabel.hidden = YES;
+    _duoConnect = [[DuoConnectOverlay alloc] initWithFrame:self.view.bounds
+                                                       app:self.streamConfig.appName ?: @""
+                                                      host:self.duoHostName
+                                                     cover:self.duoCover];
+    [self.view addSubview:_duoConnect];
+#endif
+}
+
+#pragma mark - Artemide Duo clipboard sync
+
+- (HttpManager*)duoHttpManager {
+    return [[HttpManager alloc] initWithAddress:self.streamConfig.host httpsPort:self.streamConfig.httpsPort serverCert:self.streamConfig.serverCert];
+}
+
+- (void)duoPushClipboard {
+#if !TARGET_OS_TV
+    if (![DuoPrefs clipboardSync] || ![UIPasteboard generalPasteboard].hasStrings) {
+        return;
+    }
+    NSString* text = [UIPasteboard generalPasteboard].string;
+    HttpManager* hMan = [self duoHttpManager];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [hMan sendClipboardText:text];
+    });
+#endif
+}
+
+- (void)duoPullClipboard {
+#if !TARGET_OS_TV
+    if (![DuoPrefs clipboardSync] || _duoClipboardPulled || _streamConfig == nil) {
+        return;
+    }
+    _duoClipboardPulled = YES;
+    HttpManager* hMan = [self duoHttpManager];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString* text = [hMan fetchClipboardText];
+        if (text.length > 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (![[UIPasteboard generalPasteboard].string isEqualToString:text]) {
+                    [UIPasteboard generalPasteboard].string = text;
+                }
+            });
+        }
+    });
+#endif
 }
 
 - (UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView {
@@ -276,14 +332,22 @@
             [_overlayView setTextAlignment:NSTextAlignmentCenter];
         }
         
+#if TARGET_OS_TV
         [_overlayView setTextColor:[UIColor lightGrayColor]];
         [_overlayView setBackgroundColor:[UIColor blackColor]];
-#if TARGET_OS_TV
         [_overlayView setFont:[UIFont systemFontOfSize:24]];
-#else
-        [_overlayView setFont:[UIFont systemFontOfSize:12]];
-#endif
         [_overlayView setAlpha:0.5];
+#else
+        // Artemide Duo: compact glass box at the top centre.
+        [_overlayView setTextColor:[DuoTheme text]];
+        [_overlayView setBackgroundColor:[UIColor colorWithWhite:0.04 alpha:0.62]];
+        [_overlayView setFont:[DuoTheme digits:11 weight:UIFontWeightMedium]];
+        _overlayView.textContainerInset = UIEdgeInsetsMake(8, 12, 8, 12);
+        _overlayView.layer.cornerRadius = 12;
+        _overlayView.layer.borderWidth = 1;
+        _overlayView.layer.borderColor = [DuoTheme line].CGColor;
+        _overlayView.clipsToBounds = YES;
+#endif
         [self.view addSubview:_overlayView];
     }
     
@@ -291,6 +355,7 @@
         // We set our bounds to the maximum width in order to work around a bug where
         // sizeToFit interacts badly with the UITextView's line breaks, causing the
         // width to get smaller and smaller each time as more line breaks are inserted.
+#if TARGET_OS_TV
         [_overlayView setBounds:CGRectMake(self.view.frame.origin.x,
                                            _overlayView.frame.origin.y,
                                            self.view.frame.size.width,
@@ -298,6 +363,12 @@
         [_overlayView setText:text];
         [_overlayView sizeToFit];
         [_overlayView setCenter:CGPointMake(self.view.frame.size.width / 2, _overlayView.frame.size.height / 2)];
+#else
+        [_overlayView setText:text];
+        CGSize fit = [_overlayView sizeThatFits:CGSizeMake(MIN(self.view.bounds.size.width - 32, 560), CGFLOAT_MAX)];
+        _overlayView.bounds = CGRectMake(0, 0, MIN(ceil(fit.width), self.view.bounds.size.width - 32), ceil(fit.height));
+        [_overlayView setCenter:CGPointMake(self.view.bounds.size.width / 2, self.view.safeAreaInsets.top + 10 + _overlayView.bounds.size.height / 2)];
+#endif
         [_overlayView setHidden:NO];
     }
     else {
@@ -306,6 +377,8 @@
 }
 
 - (void) returnToMainFrame {
+    [self duoPullClipboard];
+
     // Reset display mode back to default
     [self updatePreferredDisplayMode:NO];
     
@@ -317,6 +390,7 @@
 
 // This will fire if the user opens control center or gets a low battery message
 - (void)applicationWillResignActive:(NSNotification *)notification {
+    [self duoPullClipboardWhileStreaming];
     if (_inactivityTimer != nil) {
         [_inactivityTimer invalidate];
     }
@@ -340,7 +414,20 @@
     _inactivityTimer = nil;
 }
 
+- (void)duoPullClipboardWhileStreaming {
+    // Copy on the PC, switch to another iOS app: bring the text along. Allowed again later.
+    if (_duoConnect != nil) {
+        return;
+    }
+    [self duoPullClipboard];
+    _duoClipboardPulled = NO;
+}
+
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
+    // Coming back from another app: hand its clipboard to the PC.
+    if (_duoConnect == nil) {
+        [self duoPushClipboard];
+    }
     // Stop the background timer, since we're foregrounded again
     if (_inactivityTimer != nil) {
         Log(LOG_I, @"Stopping inactivity timer after becoming active again");
@@ -374,6 +461,8 @@
         // the first frame of video.
         self->_stageLabel.hidden = YES;
         self->_tipLabel.hidden = YES;
+        [self->_duoConnect connected];
+        [self duoPushClipboard];
         
         [self->_streamView showOnScreenControls];
         
@@ -476,6 +565,7 @@
         NSString* lowerCase = [NSString stringWithFormat:@"%s in progress...", stageName];
         NSString* titleCase = [[[lowerCase substringToIndex:1] uppercaseString] stringByAppendingString:[lowerCase substringFromIndex:1]];
         [self->_stageLabel setText:titleCase];
+        [self->_duoConnect stageStarting:[NSString stringWithUTF8String:stageName]];
         [self->_stageLabel sizeToFit];
         self->_stageLabel.center = CGPointMake(self.view.frame.size.width / 2, self->_stageLabel.center.y);
     });
@@ -622,6 +712,10 @@
 
 - (void) videoContentShown {
     [_spinner stopAnimating];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self->_duoConnect dismiss];
+        self->_duoConnect = nil;
+    });
     [self.view setBackgroundColor:[UIColor blackColor]];
 }
 

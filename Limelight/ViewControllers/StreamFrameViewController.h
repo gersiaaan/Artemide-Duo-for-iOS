@@ -20,6 +20,9 @@
 @interface StreamFrameViewController : UIViewController <ConnectionCallbacks, ControllerSupportDelegate, UserInteractionDelegate, UIScrollViewDelegate>
 #endif
 @property (nonatomic) StreamConfiguration* streamConfig;
+/// Artemide Duo: shown on the stream-start screen.
+@property (nonatomic, nullable) UIImage* duoCover;
+@property (nonatomic, nullable, copy) NSString* duoHostName;
 
 -(void)updatePreferredDisplayMode:(BOOL)streamActive;
 

@@ -30,6 +30,9 @@
 - (NSURLRequest*) newQuitAppRequest;
 - (NSURLRequest*) newAppAssetRequestWithAppId:(NSString*)appId;
 - (void) executeRequestSynchronously:(HttpRequest*)request;
+// Artemide Duo: Apollo / Vibeshine clipboard (blocking, call off the main thread)
+- (NSString*) fetchClipboardText;
+- (BOOL) sendClipboardText:(NSString*)text;
 
 @end
 

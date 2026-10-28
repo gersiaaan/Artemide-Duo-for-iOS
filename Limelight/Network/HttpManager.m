@@ -11,6 +11,7 @@
 #import "CryptoManager.h"
 #import "TemporaryApp.h"
 #import "ServerInfoResponse.h"
+#import "DuoSupport.h"
 
 #include <libxml2/libxml/xmlreader.h>
 #include <string.h>
@@ -269,7 +270,7 @@
     // indicated by a negative version in the last field.
     int fps = (config.frameRate > 60 && ![config.appVersion containsString:@".-"]) ? 0 : config.frameRate;
     
-    NSString* urlString = [NSString stringWithFormat:@"%@/%@?uniqueid=%@&appid=%@&mode=%dx%dx%d&additionalStates=1&sops=%d&rikey=%@&rikeyid=%d%@&localAudioPlayMode=%d&surroundAudioInfo=%d&remoteControllersBitmap=%d&gcmap=%d&gcpersist=%d&virtualDisplay=1&scaleFactor=100%s",
+    NSString* urlString = [NSString stringWithFormat:@"%@/%@?uniqueid=%@&appid=%@&mode=%dx%dx%d&additionalStates=1&sops=%d&rikey=%@&rikeyid=%d%@&localAudioPlayMode=%d&surroundAudioInfo=%d&remoteControllersBitmap=%d&gcmap=%d&gcpersist=%d&virtualDisplay=%d&scaleFactor=100%s",
                            _baseHTTPSURL, verb, _uniqueId,
                            config.appID,
                            config.width, config.height, fps,
@@ -280,6 +281,7 @@
                            SURROUNDAUDIOINFO_FROM_AUDIO_CONFIGURATION(config.audioConfiguration),
                            config.gamepadMask, config.gamepadMask,
                            !config.multiController ? 1 : 0,
+                           [DuoPrefs virtualDisplay] ? 1 : 0,
                            LiGetLaunchUrlQueryParameters()];
     Log(LOG_I, @"Requesting: %@", urlString);
     // This blocks while the app is launching
@@ -293,6 +295,64 @@
     
     NSString* urlString = [NSString stringWithFormat:@"%@/cancel?uniqueid=%@", _baseHTTPSURL, _uniqueId];
     return [self createRequestFromString:urlString timeout:LONG_TIMEOUT_SEC];
+}
+
+#pragma mark - Artemide Duo: clipboard sync (Apollo / Vibeshine)
+
+- (NSData*) duoRawRequest:(NSURLRequest*)request status:(NSInteger*)status {
+    if (request == nil) {
+        return nil;
+    }
+    __block NSData* body = nil;
+    __block NSInteger code = 0;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    NSURLSession* urlSession = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration] delegate:self delegateQueue:nil];
+    [[urlSession dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+        if (error == nil) {
+            body = data;
+            if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                code = ((NSHTTPURLResponse*)response).statusCode;
+            }
+        } else {
+            Log(LOG_W, @"Clipboard request failed: %@", error);
+        }
+        dispatch_semaphore_signal(done);
+    }] resume];
+    dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
+    [urlSession invalidateAndCancel];
+    if (status != NULL) {
+        *status = code;
+    }
+    return body;
+}
+
+- (NSString*) fetchClipboardText {
+    if (![self ensureHttpsUrlPopulated:YES]) {
+        return nil;
+    }
+    NSString* urlString = [NSString stringWithFormat:@"%@/actions/clipboard?type=text&uniqueid=%@", _baseHTTPSURL, _uniqueId];
+    NSInteger status = 0;
+    NSData* data = [self duoRawRequest:[self createRequestFromString:urlString timeout:NORMAL_TIMEOUT_SEC] status:&status];
+    if (status != 200 || data == nil) {
+        Log(LOG_I, @"Clipboard fetch returned %ld", (long)status);
+        return nil;
+    }
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+}
+
+- (BOOL) sendClipboardText:(NSString*)text {
+    if (text.length == 0 || ![self ensureHttpsUrlPopulated:YES]) {
+        return NO;
+    }
+    NSString* urlString = [NSString stringWithFormat:@"%@/actions/clipboard?type=text&uniqueid=%@", _baseHTTPSURL, _uniqueId];
+    NSMutableURLRequest* request = [[self createRequestFromString:urlString timeout:NORMAL_TIMEOUT_SEC] mutableCopy];
+    request.HTTPMethod = @"POST";
+    [request setValue:@"text/plain; charset=utf-8" forHTTPHeaderField:@"Content-Type"];
+    request.HTTPBody = [text dataUsingEncoding:NSUTF8StringEncoding];
+    NSInteger status = 0;
+    [self duoRawRequest:request status:&status];
+    Log(LOG_I, @"Clipboard send returned %ld", (long)status);
+    return status == 200;
 }
 
 - (NSURLRequest*) newAppAssetRequestWithAppId:(NSString *)appId {

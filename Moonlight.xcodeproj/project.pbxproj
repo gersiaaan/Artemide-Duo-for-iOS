@@ -131,6 +131,10 @@
 		FB9AFD401A7E127D00872C98 /* AppListResponse.m in Sources */ = {isa = PBXBuildFile; fileRef = FB9AFD3F1A7E127D00872C98 /* AppListResponse.m */; };
 		FBD1C8E21A8AD71400C6703C /* Logger.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD1C8E11A8AD71400C6703C /* Logger.m */; };
 		FBD3494319FC9C04002D2A60 /* AppAssetManager.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD3494219FC9C04002D2A60 /* AppAssetManager.m */; };
+		D0A0D0A000000000000000B1 /* DuoSupport.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A000010000000000A1 /* DuoSupport.m */; };
+		D0A0D0A000010000000000B1 /* DuoWavesView.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A000030000000000A1 /* DuoWavesView.m */; };
+		D0A0D0A000020000000000B1 /* DuoHomeView.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A000050000000000A1 /* DuoHomeView.m */; };
+		D0A0D0A000030000000000B1 /* DuoConnectOverlay.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A000070000000000A1 /* DuoConnectOverlay.m */; };
 		FBD3495019FF2174002D2A60 /* SettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD3494F19FF2174002D2A60 /* SettingsViewController.m */; };
 		FBD3495319FF36FB002D2A60 /* SWRevealViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD3495219FF36FB002D2A60 /* SWRevealViewController.m */; };
 		FBD349621A0089F6002D2A60 /* DataManager.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD349611A0089F6002D2A60 /* DataManager.m */; };
@@ -311,6 +315,14 @@
 		FBD3494119FC9C04002D2A60 /* AppAssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppAssetManager.h; sourceTree = "<group>"; };
 		FBD3494219FC9C04002D2A60 /* AppAssetManager.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppAssetManager.m; sourceTree = "<group>"; };
 		FBD3494E19FF2174002D2A60 /* SettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SettingsViewController.h; sourceTree = "<group>"; };
+		D0A0D0A000000000000000A1 /* DuoSupport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DuoSupport.h; sourceTree = "<group>"; };
+		D0A0D0A000010000000000A1 /* DuoSupport.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DuoSupport.m; sourceTree = "<group>"; };
+		D0A0D0A000020000000000A1 /* DuoWavesView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DuoWavesView.h; sourceTree = "<group>"; };
+		D0A0D0A000030000000000A1 /* DuoWavesView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DuoWavesView.m; sourceTree = "<group>"; };
+		D0A0D0A000040000000000A1 /* DuoHomeView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DuoHomeView.h; sourceTree = "<group>"; };
+		D0A0D0A000050000000000A1 /* DuoHomeView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DuoHomeView.m; sourceTree = "<group>"; };
+		D0A0D0A000060000000000A1 /* DuoConnectOverlay.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DuoConnectOverlay.h; sourceTree = "<group>"; };
+		D0A0D0A000070000000000A1 /* DuoConnectOverlay.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DuoConnectOverlay.m; sourceTree = "<group>"; };
 		FBD3494F19FF2174002D2A60 /* SettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SettingsViewController.m; sourceTree = "<group>"; };
 		FBD3495119FF36FB002D2A60 /* SWRevealViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SWRevealViewController.h; sourceTree = "<group>"; };
 		FBD3495219FF36FB002D2A60 /* SWRevealViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SWRevealViewController.m; sourceTree = "<group>"; };
@@ -577,6 +589,14 @@
 				FB89462719F646E200339C8A /* StreamFrameViewController.m */,
 				FBD3494E19FF2174002D2A60 /* SettingsViewController.h */,
 				FBD3494F19FF2174002D2A60 /* SettingsViewController.m */,
+				D0A0D0A000000000000000A1 /* DuoSupport.h */,
+				D0A0D0A000010000000000A1 /* DuoSupport.m */,
+				D0A0D0A000020000000000A1 /* DuoWavesView.h */,
+				D0A0D0A000030000000000A1 /* DuoWavesView.m */,
+				D0A0D0A000040000000000A1 /* DuoHomeView.h */,
+				D0A0D0A000050000000000A1 /* DuoHomeView.m */,
+				D0A0D0A000060000000000A1 /* DuoConnectOverlay.h */,
+				D0A0D0A000070000000000A1 /* DuoConnectOverlay.m */,
 				FB4A23B61A9D3637004D2EF2 /* LoadingFrameViewController.h */,
 				FB4A23B71A9D3637004D2EF2 /* LoadingFrameViewController.m */,
 			);
@@ -906,6 +926,10 @@
 				FBD3495319FF36FB002D2A60 /* SWRevealViewController.m in Sources */,
 				FB1D59971BBCCB6400F482CA /* ComputerScrollView.m in Sources */,
 				FBD3495019FF2174002D2A60 /* SettingsViewController.m in Sources */,
+				D0A0D0A000000000000000B1 /* DuoSupport.m in Sources */,
+				D0A0D0A000010000000000B1 /* DuoWavesView.m in Sources */,
+				D0A0D0A000020000000000B1 /* DuoHomeView.m in Sources */,
+				D0A0D0A000030000000000B1 /* DuoConnectOverlay.m in Sources */,
 				FB89462C19F646E200339C8A /* HttpManager.m in Sources */,
 				FB89462D19F646E200339C8A /* MDNSManager.m in Sources */,
 				FB89462B19F646E200339C8A /* StreamView.m in Sources */,
