@@ -157,7 +157,9 @@ BOOL isCustomResolution(CGSize res) {
     resolutionTable[2] = CGSizeMake(1920, 1080);
     resolutionTable[3] = CGSizeMake(3840, 2160);
     resolutionTable[4] = CGSizeMake(safeAreaWidth, fullScreenHeight);
-    resolutionTable[5] = CGSizeMake(fullScreenWidth, fullScreenHeight);
+    // Artemide Duo: full device resolution, always in landscape (2388x1668 on the iPad Pro 11"),
+    // independent of how the iPad was held when Settings opened.
+    resolutionTable[5] = CGSizeMake(MAX(fullScreenWidth, fullScreenHeight), MIN(fullScreenWidth, fullScreenHeight));
     resolutionTable[6] = CGSizeMake([currentSettings.width integerValue], [currentSettings.height integerValue]); // custom initial value
     
     // Don't populate the custom entry unless we have a custom resolution
@@ -251,6 +253,9 @@ BOOL isCustomResolution(CGSize res) {
     [self.audioOnPCSelector setSelectedSegmentIndex:currentSettings.playAudioOnPC ? 1 : 0];
     NSInteger onscreenControls = [currentSettings.onscreenControls integerValue];
     _lastSelectedResolutionIndex = resolution;
+    if ((int) resolutionTable[5].width == 2388 && (int) resolutionTable[5].height == 1668) {
+        [self.resolutionSelector setTitle:@"iPad Pro 11\"" forSegmentAtIndex:5];
+    }
     [self.resolutionSelector setSelectedSegmentIndex:resolution];
     [self.resolutionSelector addTarget:self action:@selector(newResolutionChosen) forControlEvents:UIControlEventValueChanged];
     [self.framerateSelector setSelectedSegmentIndex:framerate];
