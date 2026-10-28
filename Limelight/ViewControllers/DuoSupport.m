@@ -6,8 +6,7 @@
 #import "DuoSupport.h"
 
 @import SystemConfiguration;
-@import Metal;
-@import MetalFX;
+#import "DuoMetalRenderer.h"
 
 #include <sys/sysctl.h>
 #include <ifaddrs.h>
@@ -176,15 +175,7 @@ static double DuoLin(CGFloat s) {
 + (BOOL)naturalScroll { return [self boolFor:@"duo_natural_scroll" fallback:YES]; }
 + (BOOL)metalFX { return [self metalFXSupported] && [self boolFor:@"duo_metalfx" fallback:NO]; }
 + (BOOL)metalFXSupported {
-    static BOOL ok, checked;
-    if (!checked) {
-        checked = YES;
-        if (@available(iOS 16.0, *)) {
-            id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
-            ok = dev != nil && [MTLFXSpatialScalerDescriptor supportsDevice:dev];
-        }
-    }
-    return ok;
+    return [DuoMetalRenderer supported];
 }
 
 + (NSInteger)deadzone { return MAX(0, MIN(20, [self intFor:@"duo_deadzone" fallback:5])); }

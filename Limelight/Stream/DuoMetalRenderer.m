@@ -6,7 +6,37 @@
 #import "DuoMetalRenderer.h"
 
 @import Metal;
-@import MetalFX;
+#include <dlfcn.h>
+
+// MetalFX is loaded at runtime (not linked), so the app also starts on systems / devices
+// without it. Only the bits we use are declared here.
+@protocol DuoFXScaler <NSObject>
+@property (nonatomic, readonly) MTLTextureUsage colorTextureUsage;
+@property (nonatomic, readonly) MTLTextureUsage outputTextureUsage;
+@property (nonatomic) NSUInteger inputContentWidth;
+@property (nonatomic) NSUInteger inputContentHeight;
+@property (nonatomic, retain, nullable) id<MTLTexture> colorTexture;
+@property (nonatomic, retain, nullable) id<MTLTexture> outputTexture;
+- (void)encodeToCommandBuffer:(id<MTLCommandBuffer>)commandBuffer;
+@end
+
+@protocol DuoFXDescriptor <NSObject>
++ (BOOL)supportsDevice:(id<MTLDevice>)device;
+- (nullable id<DuoFXScaler>)newSpatialScalerWithDevice:(id<MTLDevice>)device;
+@end
+
+static Class DuoFXDescriptorClass(void) {
+    static Class c;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        if (@available(iOS 16.0, *)) {
+            if (dlopen("/System/Library/Frameworks/MetalFX.framework/MetalFX", RTLD_LAZY) != NULL) {
+                c = NSClassFromString(@"MTLFXSpatialScalerDescriptor");
+            }
+        }
+    });
+    return c;
+}
 @import QuartzCore;
 @import VideoToolbox;
 @import CoreVideo;
@@ -53,14 +83,10 @@ static NSString* const kShader =
     if (self == nil) {
         return nil;
     }
-    if (@available(iOS 16.0, *)) {
-        _device = MTLCreateSystemDefaultDevice();
-        if (_device == nil || ![MTLFXSpatialScalerDescriptor supportsDevice:_device]) {
-            return nil;
-        }
-    } else {
+    if (![DuoMetalRenderer supported]) {
         return nil;
     }
+    _device = MTLCreateSystemDefaultDevice();
     NSError* err = nil;
     id<MTLLibrary> lib = [_device newLibraryWithSource:kShader options:nil error:&err];
     id<MTLFunction> fn = [lib newFunctionWithName:@"duoNv12"];
@@ -88,6 +114,17 @@ static NSString* const kShader =
     [self setLayerFrame:frame];
     _inFlight = dispatch_semaphore_create(2);
     return self;
+}
+
++ (BOOL)supported {
+    static BOOL ok, checked;
+    if (!checked) {
+        checked = YES;
+        Class<DuoFXDescriptor> c = (Class<DuoFXDescriptor>)DuoFXDescriptorClass();
+        id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+        ok = c != nil && dev != nil && [c respondsToSelector:@selector(supportsDevice:)] && [c supportsDevice:dev];
+    }
+    return ok;
 }
 
 - (CALayer*)layer {
@@ -225,16 +262,14 @@ static void DuoDecoded(void* refcon, void* frameRefcon, OSStatus status, VTDecod
     [enc endEncoding];
 
     id<MTLTexture> result = _rgb;
-    if (@available(iOS 16.0, *)) {
-        if (_scaler != nil) {
-            id<MTLFXSpatialScaler> sc = _scaler;
-            sc.colorTexture = _rgb;
-            sc.outputTexture = _scaled;
-            sc.inputContentWidth = w;
-            sc.inputContentHeight = h;
-            [sc encodeToCommandBuffer:cmd];
-            result = _scaled;
-        }
+    if (_scaler != nil && _scaled != nil) {
+        id<DuoFXScaler> sc = _scaler;
+        sc.colorTexture = _rgb;
+        sc.outputTexture = _scaled;
+        sc.inputContentWidth = w;
+        sc.inputContentHeight = h;
+        [sc encodeToCommandBuffer:cmd];
+        result = _scaled;
     }
     id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
     NSUInteger bw = MIN(result.width, drawable.texture.width), bh = MIN(result.height, drawable.texture.height);
@@ -258,26 +293,24 @@ static void DuoDecoded(void* refcon, void* frameRefcon, OSStatus status, VTDecod
         _scaled = nil;
         MTLTextureUsage colorUsage = MTLTextureUsageShaderWrite | MTLTextureUsageShaderRead;
         BOOL upscale = out.width > in.width + 1 || out.height > in.height + 1;
-        if (@available(iOS 16.0, *)) {
-            if (upscale) {
-                MTLFXSpatialScalerDescriptor* d = [[MTLFXSpatialScalerDescriptor alloc] init];
-                d.inputWidth = (NSUInteger)in.width;
-                d.inputHeight = (NSUInteger)in.height;
-                d.outputWidth = (NSUInteger)out.width;
-                d.outputHeight = (NSUInteger)out.height;
-                d.colorTextureFormat = MTLPixelFormatBGRA8Unorm;
-                d.outputTextureFormat = MTLPixelFormatBGRA8Unorm;
-                d.colorProcessingMode = MTLFXSpatialScalerColorProcessingModePerceptual;
-                id<MTLFXSpatialScaler> sc = [d newSpatialScalerWithDevice:_device];
-                if (sc != nil) {
-                    _scaler = sc;
-                    colorUsage |= sc.colorTextureUsage;
-                    MTLTextureDescriptor* od = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                                                  width:(NSUInteger)out.width height:(NSUInteger)out.height mipmapped:NO];
-                    od.usage = sc.outputTextureUsage | MTLTextureUsageShaderRead;
-                    od.storageMode = MTLStorageModePrivate;
-                    _scaled = [_device newTextureWithDescriptor:od];
-                }
+        Class c = DuoFXDescriptorClass();
+        if (upscale && c != nil) {
+            id d = [[c alloc] init];
+            [d setValue:@((NSUInteger)in.width) forKey:@"inputWidth"];
+            [d setValue:@((NSUInteger)in.height) forKey:@"inputHeight"];
+            [d setValue:@((NSUInteger)out.width) forKey:@"outputWidth"];
+            [d setValue:@((NSUInteger)out.height) forKey:@"outputHeight"];
+            [d setValue:@(MTLPixelFormatBGRA8Unorm) forKey:@"colorTextureFormat"];
+            [d setValue:@(MTLPixelFormatBGRA8Unorm) forKey:@"outputTextureFormat"];
+            id<DuoFXScaler> sc = [(id<DuoFXDescriptor>)d newSpatialScalerWithDevice:_device];
+            if (sc != nil) {
+                _scaler = sc;
+                colorUsage |= sc.colorTextureUsage;
+                MTLTextureDescriptor* od = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                              width:(NSUInteger)out.width height:(NSUInteger)out.height mipmapped:NO];
+                od.usage = sc.outputTextureUsage | MTLTextureUsageShaderRead;
+                od.storageMode = MTLStorageModePrivate;
+                _scaled = [_device newTextureWithDescriptor:od];
             }
         }
         MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm

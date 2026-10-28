@@ -13,6 +13,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface DuoMetalRenderer : NSObject
+/// MetalFX available on this device (loaded at runtime).
++ (BOOL)supported;
 /// nil when Metal / MetalFX can't be set up.
 - (nullable instancetype)initWithLayerFrame:(CGRect)frame inView:(UIView*)view;
 @property (nonatomic, readonly) CALayer* layer;

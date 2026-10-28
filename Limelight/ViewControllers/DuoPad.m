@@ -60,6 +60,15 @@ NSString* const DuoPadChangedNotification = @"DuoPadChanged";
 }
 
 + (NSArray<UIKeyCommand*>*)keyCommandsWithAction:(SEL)action {
+    // Built once per action and reused (UIKit asks for them very often).
+    static NSMutableDictionary<NSString*, NSArray<UIKeyCommand*>*>* cache;
+    if (cache == nil) {
+        cache = [NSMutableDictionary dictionary];
+    }
+    NSString* key = NSStringFromSelector(action);
+    if (cache[key] != nil) {
+        return cache[key];
+    }
     NSMutableArray* c = [NSMutableArray array];
     void (^add)(NSString*, UIKeyModifierFlags, DuoPadKey, NSString*) = ^(NSString* input, UIKeyModifierFlags mods, DuoPadKey key, NSString* title) {
         UIKeyCommand* k = [UIKeyCommand commandWithTitle:title ?: @"" image:nil action:action input:input modifierFlags:mods propertyList:@(key)];
@@ -88,6 +97,7 @@ NSString* const DuoPadChangedNotification = @"DuoPadChanged";
     add(@"f", UIKeyModifierCommand, DuoPadX, @"Favourite / play again");
     add(@"i", UIKeyModifierCommand, DuoPadSelect, @"Options");
     add(UIKeyInputDelete, UIKeyModifierCommand, DuoPadStart, @"Quit all sessions");
+    cache[key] = c;
     return c;
 }
 
