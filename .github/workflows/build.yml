@@ -43,6 +43,14 @@ jobs:
           cp -R "$APP" build/Payload/
           cd build && zip -qry "ArtemideDuo-iOS-v${{ steps.ver.outputs.v }}.ipa" Payload
 
+      - name: Report compile errors
+        if: failure()
+        run: |
+          grep -E "error:" build.log | sed -E 's#^.*/Limelight/#Limelight/#' | sort -u > errors.txt || true
+          head -9 errors.txt | while IFS= read -r l; do echo "::error::$l"; done
+          ALL=$(head -80 errors.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=All errors::$ALL"
+
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
