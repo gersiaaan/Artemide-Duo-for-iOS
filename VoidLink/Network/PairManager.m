@@ -35,8 +35,8 @@
     [_callback startPairing:PIN];
     
     ServerInfoResponse* serverInfoResp = [[ServerInfoResponse alloc] init];
-    [_httpManager executeRequestSynchronously:[HttpRequest requestForResponse:serverInfoResp withUrlRequest:[_httpManager newServerInfoRequest:false]
-                                               fallbackError:401 fallbackRequest:[_httpManager newHttpServerInfoRequest]]];
+    // Not paired yet: plain HTTP serverinfo (an HTTPS attempt can time out instead of returning 401).
+    [_httpManager executeRequestSynchronously:[HttpRequest requestForResponse:serverInfoResp withUrlRequest:[_httpManager newHttpServerInfoRequest]]];
     if ([serverInfoResp isStatusOk]) {
         if (![[serverInfoResp getStringTag:@"PairStatus"] isEqual:@"1"]) {
             NSString* appversion = [serverInfoResp getStringTag:@"appversion"];
@@ -50,7 +50,7 @@
         }
     }
     else {
-        [_callback pairFailed:serverInfoResp.statusMessage];
+        [_callback pairFailed:[NSString stringWithFormat:@"%@\n(serverinfo · %@)", serverInfoResp.statusMessage, [_httpManager debugTarget]]];
     }
 }
 
@@ -64,8 +64,8 @@
     }
     
     if (![resp isStatusOk]) {
-        // Use the response error if the request failed
-        errorMsg = resp.statusMessage;
+        // Use the response error if the request failed, and say at which step it happened.
+        errorMsg = [NSString stringWithFormat:@"%@\n(%@ · %@)", resp.statusMessage, errorMsg, [_httpManager debugTarget]];
     }
     
     [_callback pairFailed:errorMsg];

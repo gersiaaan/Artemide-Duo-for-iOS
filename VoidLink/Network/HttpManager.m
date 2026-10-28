@@ -77,6 +77,10 @@
     return self;
 }
 
+- (NSString*) debugTarget {
+    return [NSString stringWithFormat:@"%@ / %@", _baseHTTPURL ?: @"-", _baseHTTPSURL ?: @"https ?"];
+}
+
 - (BOOL) ensureHttpsUrlPopulated:(bool)fastFail {
     if (!_baseHTTPSURL) {
         // Use the caller's provided port if one was specified
@@ -202,18 +206,18 @@
 - (NSURLRequest*) newChallengeRequest:(NSData*)challenge {
     NSString* urlString = [NSString stringWithFormat:@"%@/pair?uniqueid=%@&devicename=%@&updateState=1&clientchallenge=%@",
                            _baseHTTPURL, _uniqueId, _deviceName, [self bytesToHex:challenge]];
-    return [self createRequestFromString:urlString timeout:NORMAL_TIMEOUT_SEC];
+    return [self createRequestFromString:urlString timeout:LONG_TIMEOUT_SEC];
 }
 
 - (NSURLRequest*) newChallengeRespRequest:(NSData*)challengeResp {
     NSString* urlString = [NSString stringWithFormat:@"%@/pair?uniqueid=%@&devicename=%@&updateState=1&serverchallengeresp=%@",
                            _baseHTTPURL, _uniqueId, _deviceName, [self bytesToHex:challengeResp]];
-    return [self createRequestFromString:urlString timeout:NORMAL_TIMEOUT_SEC];
+    return [self createRequestFromString:urlString timeout:LONG_TIMEOUT_SEC];
 }
 
 - (NSURLRequest*) newClientSecretRespRequest:(NSString*)clientPairSecret {
     NSString* urlString = [NSString stringWithFormat:@"%@/pair?uniqueid=%@&devicename=%@&updateState=1&clientpairingsecret=%@", _baseHTTPURL, _uniqueId, _deviceName, clientPairSecret];
-    return [self createRequestFromString:urlString timeout:NORMAL_TIMEOUT_SEC];
+    return [self createRequestFromString:urlString timeout:LONG_TIMEOUT_SEC];
 }
 
 - (NSURLRequest*) newPairChallenge {
@@ -222,7 +226,7 @@
     }
     
     NSString* urlString = [NSString stringWithFormat:@"%@/pair?uniqueid=%@&devicename=%@&updateState=1&phrase=pairchallenge", _baseHTTPSURL, _uniqueId, _deviceName];
-    return [self createRequestFromString:urlString timeout:NORMAL_TIMEOUT_SEC];
+    return [self createRequestFromString:urlString timeout:LONG_TIMEOUT_SEC];
 }
 
 - (NSURLRequest *)newAppListRequest {

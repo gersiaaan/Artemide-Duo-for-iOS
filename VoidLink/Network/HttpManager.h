@@ -16,6 +16,7 @@
 - (id) initWithHost:(TemporaryHost*) host;
 - (id) initWithAddress:(NSString*) hostAddressPortString httpsPort:(unsigned short) httpsPort serverCert:(NSData*) serverCert;
 - (void) setServerCert:(NSData*) serverCert;
+- (NSString*) debugTarget;
 - (NSURLRequest*) newPairRequest:(NSData*)salt clientCert:(NSData*)clientCert;
 - (NSURLRequest*) newUnpairRequest;
 - (NSURLRequest*) newChallengeRequest:(NSData*)challenge;
