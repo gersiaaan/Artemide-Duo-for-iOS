@@ -1070,8 +1070,7 @@
 				MARKETING_VERSION = 9.0.2;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gersiaaan.artemideduo;
-				PRODUCT_MODULE_NAME = Moonlight;
-				PRODUCT_NAME = ArtemideDuo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "Moonlight-Swift.h";
@@ -1127,8 +1126,7 @@
 				MARKETING_VERSION = 9.0.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gersiaaan.artemideduo;
-				PRODUCT_MODULE_NAME = Moonlight;
-				PRODUCT_NAME = ArtemideDuo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";
@@ -1293,7 +1291,8 @@
 				);
 				MARKETING_VERSION = 9.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gersiaaan.artemideduo;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = Moonlight;
+				PRODUCT_NAME = ArtemideDuo;
 				PROVISIONING_PROFILE = "";
 				SKIP_INSTALL = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";
@@ -1343,7 +1342,8 @@
 				);
 				MARKETING_VERSION = 9.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gersiaaan.artemideduo;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = Moonlight;
+				PRODUCT_NAME = ArtemideDuo;
 				PROVISIONING_PROFILE = "";
 				SKIP_INSTALL = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
