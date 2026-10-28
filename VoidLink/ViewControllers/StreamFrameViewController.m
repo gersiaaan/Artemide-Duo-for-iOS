@@ -1921,7 +1921,7 @@ static __weak StreamFrameViewController *VLSharedStreamFrameViewController = nil
         NSString* title;
         NSString* message;
         
-        if (portTestResults != ML_TEST_RESULT_INCONCLUSIVE && portTestResults != 0) {
+        if (portTestResults != ML_TEST_RESULT_INCONCLUSIVE && portTestResults != 0 && errorCode == ML_ERROR_GRACEFUL_TERMINATION) {
             title = [LocalizationHelper localizedStringForKey:@"Connection Error"];
             message = @"Your device's session connection is being blocked. Streaming may not work while connected to this network.";
         }
@@ -1981,6 +1981,15 @@ static __weak StreamFrameViewController *VLSharedStreamFrameViewController = nil
             }
         }
         
+        // Artemide Duo: always show what really happened (error code, failing ports, port test).
+        {
+            char ports[256] = {0};
+            if (portFlags != 0) {
+                LiStringifyPortFlags(portFlags, ", ", ports, sizeof(ports));
+            }
+            message = [NSString stringWithFormat:@"%@\n\n[error %d · ports: %s · port test: %u]", message ?: @"", errorCode,
+                       portFlags != 0 ? ports : "-", portTestResults];
+        }
         UIAlertController* conTermAlert = [UIAlertController alertControllerWithTitle:title
                                                                               message:message
                                                                        preferredStyle:UIAlertControllerStyleAlert];
