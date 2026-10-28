@@ -396,12 +396,10 @@ UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
     float mbps = [st[@"mbps"] floatValue];
     _duoPeakMbps = MAX(_duoPeakMbps, (long long)(mbps * 10));
     add([NSString stringWithFormat:@"%@×%@ · %@ · %.1f FPS", st[@"width"], st[@"height"], st[@"codec"], [st[@"fps"] floatValue]], YES);
-    add(@"
-", NO);
+    add(@"\n", NO);
     add([NSString stringWithFormat:@"Bitrate %.1f Mbps", mbps], YES);
     add([NSString stringWithFormat:@" (%.1f MB/s) · peak %.1f", mbps / 8, _duoPeakMbps / 10.0], NO);
-    add(@"
-", NO);
+    add(@"\n", NO);
     float net = [st[@"rtt"] floatValue], host = [st[@"hostAvg"] floatValue];
     add(@"Total ", NO);
     add([NSString stringWithFormat:@"≈ %.1f ms", net + host], YES);
@@ -410,8 +408,7 @@ UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
     add([NSString stringWithFormat:@" ±%@ · dropped ", st[@"rttVar"]], NO);
     add([NSString stringWithFormat:@"%.2f%%", [st[@"loss"] floatValue]], YES);
     if ((detailed || [DuoPrefs overlayHostStats]) && [st[@"hasHost"] boolValue]) {
-        add(@"
-Host  ", NO);
+        add(@"\nHost  ", NO);
         add([NSString stringWithFormat:@"%.1f / %.1f / ", [st[@"hostMin"] floatValue], [st[@"hostMax"] floatValue]], NO);
         add([NSString stringWithFormat:@"%.1f ms", host], YES);
     }
