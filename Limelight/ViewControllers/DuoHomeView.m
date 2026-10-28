@@ -202,7 +202,7 @@ static UIColor* DuoStateColor(TemporaryHost* h) {
         [lb addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(prevHost)]];
         [rb addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(nextHost)]];
         _pills = @[lb, rb];
-        UIScrollView* scroll = [[UIScrollView alloc] init];
+        UIScrollView* scroll = [[DuoScrollView alloc] init];
         scroll.translatesAutoresizingMaskIntoConstraints = NO;
         scroll.showsHorizontalScrollIndicator = NO;
         _hostChips = DuoRow(6 * d);
@@ -365,7 +365,7 @@ static UIColor* DuoStateColor(TemporaryHost* h) {
     [c addArrangedSubview:_subline];
     [c setCustomSpacing:6 * d afterView:_subline];
 
-    _chipScroll = [[UIScrollView alloc] init];
+    _chipScroll = [[DuoScrollView alloc] init];
     _chipScroll.translatesAutoresizingMaskIntoConstraints = NO;
     _chipScroll.showsHorizontalScrollIndicator = NO;
     _chips = DuoRow(6 * d);
@@ -868,7 +868,7 @@ static UIColor* DuoStateColor(TemporaryHost* h) {
     for (DuoButton* b in @[_primary, _options, _playAgain, _settings, _quitAll]) {
         [b updateGlyphs:pad];
     }
-    [self showFocus:pad];
+    [self showFocus:[DuoPad shared].focusVisible];
 }
 
 - (void)showFocus:(BOOL)on {

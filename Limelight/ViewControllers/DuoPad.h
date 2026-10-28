@@ -27,6 +27,12 @@ extern NSString* const DuoPadChangedNotification;
 @interface DuoPad : NSObject
 + (instancetype)shared;
 @property (nonatomic, readonly) BOOL hasGamepad;
+/// Show the focus ring (a controller is connected or the hardware keyboard was used).
+@property (nonatomic, readonly) BOOL focusVisible;
+/// Hardware keyboard (Magic Keyboard): arrows, Return, Esc, Tab … act like the controller.
+- (void)keyboard:(DuoPadKey)key;
+/// Key commands for a screen; their action must call -keyboard: with propertyList as key.
++ (NSArray<UIKeyCommand*>*)keyCommandsWithAction:(SEL)action;
 /// The screen in front gets the keys (last pushed).
 - (void)push:(id<DuoPadTarget>)target;
 - (void)remove:(id<DuoPadTarget>)target;

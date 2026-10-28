@@ -5,8 +5,9 @@
 
 #import "DuoSupport.h"
 
-@import CoreText;
 @import SystemConfiguration;
+@import Metal;
+@import MetalFX;
 
 #include <sys/sysctl.h>
 #include <ifaddrs.h>
@@ -88,45 +89,21 @@ static double DuoLin(CGFloat s) {
     return MAX(1.0, MIN(1.5, k));
 }
 
-static BOOL sFontsRegistered;
-
 + (void)registerFonts {
-    if (sFontsRegistered) {
-        return;
-    }
-    sFontsRegistered = YES;
-    for (NSString* n in @[@"inter_regular", @"inter_medium", @"inter_semibold", @"inter_bold"]) {
-        NSURL* url = [[NSBundle mainBundle] URLForResource:n withExtension:@"ttf"];
-        if (url != nil) {
-            CTFontManagerRegisterFontsForURL((__bridge CFURLRef)url, kCTFontManagerScopeProcess, NULL);
-        }
-    }
-}
-
-+ (UIFont*)font:(NSString*)name size:(CGFloat)size weight:(UIFontWeight)weight {
-    [self registerFonts];
-    UIFont* f = [UIFont fontWithName:name size:size];
-    return f ?: [UIFont systemFontOfSize:size weight:weight];
+    // Artemide Duo for iOS uses Apple's own system font (SF Pro) like a native iOS app.
 }
 
 + (UIFont*)font:(CGFloat)size weight:(UIFontWeight)weight {
-    if (weight >= UIFontWeightBold) return [self bold:size];
-    if (weight >= UIFontWeightSemibold) return [self semibold:size];
-    if (weight >= UIFontWeightMedium) return [self medium:size];
-    return [self regular:size];
+    return [UIFont systemFontOfSize:size weight:weight];
 }
 
-+ (UIFont*)regular:(CGFloat)size { return [self font:@"Inter-Regular" size:size weight:UIFontWeightRegular]; }
-+ (UIFont*)medium:(CGFloat)size { return [self font:@"Inter-Medium" size:size weight:UIFontWeightMedium]; }
-+ (UIFont*)semibold:(CGFloat)size { return [self font:@"Inter-SemiBold" size:size weight:UIFontWeightSemibold]; }
-+ (UIFont*)bold:(CGFloat)size { return [self font:@"Inter-Bold" size:size weight:UIFontWeightBold]; }
++ (UIFont*)regular:(CGFloat)size { return [UIFont systemFontOfSize:size weight:UIFontWeightRegular]; }
++ (UIFont*)medium:(CGFloat)size { return [UIFont systemFontOfSize:size weight:UIFontWeightMedium]; }
++ (UIFont*)semibold:(CGFloat)size { return [UIFont systemFontOfSize:size weight:UIFontWeightSemibold]; }
++ (UIFont*)bold:(CGFloat)size { return [UIFont systemFontOfSize:size weight:UIFontWeightBold]; }
 
 + (UIFont*)digits:(CGFloat)size weight:(UIFontWeight)weight {
-    UIFont* base = weight >= UIFontWeightSemibold ? [self semibold:size] : weight >= UIFontWeightMedium ? [self medium:size] : [self regular:size];
-    UIFontDescriptor* d = [base.fontDescriptor fontDescriptorByAddingAttributes:@{
-        UIFontDescriptorFeatureSettingsAttribute: @[@{UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType),
-                                                     UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)}]}];
-    return [UIFont fontWithDescriptor:d size:size];
+    return [UIFont monospacedDigitSystemFontOfSize:size weight:weight];
 }
 
 + (NSAttributedString*)brand:(BOOL)upper size:(CGFloat)size {
@@ -194,6 +171,21 @@ static BOOL sFontsRegistered;
 + (BOOL)trackpadSwapAxis { return [self boolFor:@"duo_trackpad_swap" fallback:NO]; }
 + (NSInteger)dragHoldMs { return MAX(150, [self intFor:@"duo_drag_hold" fallback:650]); }
 + (BOOL)rememberZoom { return [self boolFor:@"duo_remember_zoom" fallback:NO]; }
++ (BOOL)localCursor { return [self boolFor:@"duo_local_cursor" fallback:YES]; }
++ (NSInteger)mouseSpeed { return MAX(20, MIN(400, [self intFor:@"duo_mouse_speed" fallback:100])); }
++ (BOOL)naturalScroll { return [self boolFor:@"duo_natural_scroll" fallback:YES]; }
++ (BOOL)metalFX { return [self metalFXSupported] && [self boolFor:@"duo_metalfx" fallback:NO]; }
++ (BOOL)metalFXSupported {
+    static BOOL ok, checked;
+    if (!checked) {
+        checked = YES;
+        if (@available(iOS 16.0, *)) {
+            id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+            ok = dev != nil && [MTLFXSpatialScalerDescriptor supportsDevice:dev];
+        }
+    }
+    return ok;
+}
 
 + (NSInteger)deadzone { return MAX(0, MIN(20, [self intFor:@"duo_deadzone" fallback:5])); }
 + (BOOL)gamepadMouse { return [self boolFor:@"duo_gamepad_mouse" fallback:YES]; }
@@ -351,6 +343,14 @@ static BOOL sFontsRegistered;
     }
 }
 
+@end
+
+#pragma mark - Scroll view
+
+@implementation DuoScrollView
+- (BOOL)touchesShouldCancelInContentView:(UIView*)view {
+    return YES;
+}
 @end
 
 #pragma mark - Play stats

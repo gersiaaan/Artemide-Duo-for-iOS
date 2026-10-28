@@ -18,6 +18,9 @@
 
 static const double X1_MOUSE_SPEED_DIVISOR = 2.5;
 
+/// Artemide Duo: the iPad draws the cursor (desktop apps); the PC gets absolute positions.
+BOOL DuoLocalCursorActive = NO;
+
 @implementation StreamView {
     OnScreenControls* onScreenControls;
     
@@ -532,7 +535,7 @@ static const double X1_MOUSE_SPEED_DIVISOR = 2.5;
         UITouch *touch = [touches anyObject];
         if (touch.type == UITouchTypeIndirectPointer) {
             if (@available(iOS 14.0, *)) {
-                if ([GCMouse current] != nil) {
+                if ([GCMouse current] != nil && !DuoLocalCursorActive) {
                     // We'll handle this with GCMouse. Do nothing here.
                     return;
                 }
@@ -683,7 +686,7 @@ static const double X1_MOUSE_SPEED_DIVISOR = 2.5;
                        regionForRequest:(UIPointerRegionRequest *)request
                           defaultRegion:(UIPointerRegion *)defaultRegion API_AVAILABLE(ios(13.4)) {
     if (@available(iOS 14.0, *)) {
-        if ([GCMouse current] != nil) {
+        if ([GCMouse current] != nil && !DuoLocalCursorActive) {
             // We'll handle this with GCMouse. Do nothing here.
             return nil;
         }
@@ -711,6 +714,12 @@ static const double X1_MOUSE_SPEED_DIVISOR = 2.5;
 }
 
 - (UIPointerStyle *)pointerInteraction:(UIPointerInteraction *)interaction styleForRegion:(UIPointerRegion *)region  API_AVAILABLE(ios(13.4)) {
+    if (DuoLocalCursorActive) {
+        // Artemide Duo: the iPad's own pointer, drawn without any network delay.
+        if (@available(iOS 15.0, *)) {
+            return [UIPointerStyle systemPointerStyle];
+        }
+    }
     // Always hide the mouse cursor over our stream view
     return [UIPointerStyle hiddenPointerStyle];
 }
@@ -733,6 +742,9 @@ static const double X1_MOUSE_SPEED_DIVISOR = 2.5;
     
     {
         short translationDeltaY = ((currentScrollTranslation.y - lastScrollTranslation.y) / self.bounds.size.height) * translationMultiplier;
+        if (![DuoPrefs naturalScroll]) {
+            translationDeltaY = -translationDeltaY;
+        }
         if (translationDeltaY != 0) {
             LiSendHighResScrollEvent(translationDeltaY);
             lastScrollTranslation = currentScrollTranslation;

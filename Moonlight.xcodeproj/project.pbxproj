@@ -139,10 +139,7 @@
 		D0A0D0A000050000000000B1 /* DuoPad.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A0000B0000000000A1 /* DuoPad.m */; };
 		D0A0D0A000060000000000B1 /* DuoSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A0000D0000000000A1 /* DuoSettingsViewController.m */; };
 		D0A0D0A000070000000000B1 /* DuoStreamMenu.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A0000F0000000000A1 /* DuoStreamMenu.m */; };
-		D0A0F0A000000000000000D1 /* inter_regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0A0F0A000000000000000C1 /* inter_regular.ttf */; };
-		D0A0F0A000010000000000D1 /* inter_medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0A0F0A000010000000000C1 /* inter_medium.ttf */; };
-		D0A0F0A000020000000000D1 /* inter_semibold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0A0F0A000020000000000C1 /* inter_semibold.ttf */; };
-		D0A0F0A000030000000000D1 /* inter_bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0A0F0A000030000000000C1 /* inter_bold.ttf */; };
+		D0A0D0A000080000000000B1 /* DuoMetalRenderer.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A0D0A000110000000000A1 /* DuoMetalRenderer.m */; };
 		FBD3495019FF2174002D2A60 /* SettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD3494F19FF2174002D2A60 /* SettingsViewController.m */; };
 		FBD3495319FF36FB002D2A60 /* SWRevealViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD3495219FF36FB002D2A60 /* SWRevealViewController.m */; };
 		FBD349621A0089F6002D2A60 /* DataManager.m in Sources */ = {isa = PBXBuildFile; fileRef = FBD349611A0089F6002D2A60 /* DataManager.m */; };
@@ -339,10 +336,8 @@
 		D0A0D0A0000D0000000000A1 /* DuoSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DuoSettingsViewController.m; sourceTree = "<group>"; };
 		D0A0D0A0000E0000000000A1 /* DuoStreamMenu.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DuoStreamMenu.h; sourceTree = "<group>"; };
 		D0A0D0A0000F0000000000A1 /* DuoStreamMenu.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DuoStreamMenu.m; sourceTree = "<group>"; };
-		D0A0F0A000000000000000C1 /* inter_regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = inter_regular.ttf; path = Fonts/inter_regular.ttf; sourceTree = "<group>"; };
-		D0A0F0A000010000000000C1 /* inter_medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = inter_medium.ttf; path = Fonts/inter_medium.ttf; sourceTree = "<group>"; };
-		D0A0F0A000020000000000C1 /* inter_semibold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = inter_semibold.ttf; path = Fonts/inter_semibold.ttf; sourceTree = "<group>"; };
-		D0A0F0A000030000000000C1 /* inter_bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = inter_bold.ttf; path = Fonts/inter_bold.ttf; sourceTree = "<group>"; };
+		D0A0D0A000100000000000A1 /* DuoMetalRenderer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DuoMetalRenderer.h; sourceTree = "<group>"; };
+		D0A0D0A000110000000000A1 /* DuoMetalRenderer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DuoMetalRenderer.m; sourceTree = "<group>"; };
 		FBD3494F19FF2174002D2A60 /* SettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SettingsViewController.m; sourceTree = "<group>"; };
 		FBD3495119FF36FB002D2A60 /* SWRevealViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SWRevealViewController.h; sourceTree = "<group>"; };
 		FBD3495219FF36FB002D2A60 /* SWRevealViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SWRevealViewController.m; sourceTree = "<group>"; };
@@ -510,10 +505,6 @@
 			isa = PBXGroup;
 			children = (
 				FB290CFB19B2C406004C83CF /* Limelight-Info.plist */,
-				D0A0F0A000000000000000C1 /* inter_regular.ttf */,
-				D0A0F0A000010000000000C1 /* inter_medium.ttf */,
-				D0A0F0A000020000000000C1 /* inter_semibold.ttf */,
-				D0A0F0A000030000000000C1 /* inter_bold.ttf */,
 				FB290CFC19B2C406004C83CF /* InfoPlist.strings */,
 				FB290CFF19B2C406004C83CF /* main.m */,
 				FB290D0119B2C406004C83CF /* Limelight-Prefix.pch */,
@@ -586,6 +577,8 @@
 				FB89461B19F646E200339C8A /* StreamManager.m */,
 				FB89461C19F646E200339C8A /* VideoDecoderRenderer.h */,
 				FB89461D19F646E200339C8A /* VideoDecoderRenderer.m */,
+				D0A0D0A000100000000000A1 /* DuoMetalRenderer.h */,
+				D0A0D0A000110000000000A1 /* DuoMetalRenderer.m */,
 				9803CCAB254F9EAF00EE185E /* ConnectionCallbacks.h */,
 			);
 			path = Stream;
@@ -870,10 +863,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				FB290E7919B37D81004C83CF /* iPad.storyboard in Resources */,
-				D0A0F0A000000000000000D1 /* inter_regular.ttf in Resources */,
-				D0A0F0A000010000000000D1 /* inter_medium.ttf in Resources */,
-				D0A0F0A000020000000000D1 /* inter_semibold.ttf in Resources */,
-				D0A0F0A000030000000000D1 /* inter_bold.ttf in Resources */,
 				FB290CFE19B2C406004C83CF /* InfoPlist.strings in Resources */,
 				FB290E7B19B38036004C83CF /* iPhone.storyboard in Resources */,
 				FB290D0919B2C406004C83CF /* Images.xcassets in Resources */,
@@ -962,6 +951,7 @@
 				FBD3495319FF36FB002D2A60 /* SWRevealViewController.m in Sources */,
 				FB1D59971BBCCB6400F482CA /* ComputerScrollView.m in Sources */,
 				FBD3495019FF2174002D2A60 /* SettingsViewController.m in Sources */,
+				D0A0D0A000080000000000B1 /* DuoMetalRenderer.m in Sources */,
 				D0A0D0A000040000000000B1 /* DuoAppsView.m in Sources */,
 				D0A0D0A000050000000000B1 /* DuoPad.m in Sources */,
 				D0A0D0A000060000000000B1 /* DuoSettingsViewController.m in Sources */,

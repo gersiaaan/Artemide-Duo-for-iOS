@@ -170,7 +170,7 @@
 }
 
 - (void)showFocus {
-    BOOL pad = [DuoPad shared].hasGamepad;
+    BOOL pad = [DuoPad shared].focusVisible;
     for (NSInteger i = 0; i < (NSInteger)_buttons.count; i++) {
         _buttons[i].duoFocused = pad && i == _focus;
     }

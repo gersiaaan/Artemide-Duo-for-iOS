@@ -8,6 +8,7 @@
 
 #import "VideoDecoderRenderer.h"
 #import "DuoSupport.h"
+#import "DuoMetalRenderer.h"
 #import "StreamView.h"
 
 #include <libavcodec/avcodec.h>
@@ -36,6 +37,7 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     
     CADisplayLink* _displayLink;
     BOOL framePacing;
+    DuoMetalRenderer* _duoMetal;
 }
 
 - (void)reinitializeDisplayLayer
@@ -56,6 +58,7 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     displayLayer.position = CGPointMake(CGRectGetMidX(_view.bounds), CGRectGetMidY(_view.bounds));
     displayLayer.bounds = CGRectMake(0, 0, videoSize.width, videoSize.height);
     displayLayer.videoGravity = AVLayerVideoGravityResize;
+    [_duoMetal setLayerFrame:displayLayer.frame];
 
     // Hide the layer until we get an IDR frame. This ensures we
     // can see the loading progress label as the stream is starting.
@@ -100,6 +103,18 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
 {
     self->videoFormat = videoFormat;
     self->frameRate = frameRate;
+    
+    // Artemide Duo: MetalFX upscaling for SDR streams that are smaller than the screen area.
+    if ([DuoPrefs metalFX] && !(videoFormat & VIDEO_FORMAT_MASK_10BIT)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            CGFloat scale = self->_view.window.screen.scale ?: [UIScreen mainScreen].scale;
+            CGSize area = self->displayLayer.frame.size;
+            if ((CGFloat)videoWidth * videoHeight < area.width * scale * area.height * scale * 0.98) {
+                self->_duoMetal = [[DuoMetalRenderer alloc] initWithLayerFrame:self->displayLayer.frame inView:self->_view];
+                Log(LOG_I, @"MetalFX upscaling: %@", self->_duoMetal != nil ? @"on" : @"unavailable");
+            }
+        });
+    }
 }
 
 - (void)start
@@ -146,6 +161,7 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
 - (void)stop
 {
     [_displayLink invalidate];
+    [_duoMetal stop];
 }
 
 #define NALU_START_PREFIX_SIZE 3
@@ -598,11 +614,21 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
     }
 
     // Enqueue the next frame
-    [self->displayLayer enqueueSampleBuffer:sampleBuffer];
+    if (_duoMetal != nil) {
+        // Artemide Duo: VideoToolbox + MetalFX instead of the display layer.
+        if (![_duoMetal decode:sampleBuffer format:formatDesc]) {
+            CFRelease(dataBlockBuffer);
+            CFRelease(frameBlockBuffer);
+            CFRelease(sampleBuffer);
+            return DR_NEED_IDR;
+        }
+    } else {
+        [self->displayLayer enqueueSampleBuffer:sampleBuffer];
+    }
     
     if (du->frameType == FRAME_TYPE_IDR) {
         // Ensure the layer is visible now
-        self->displayLayer.hidden = NO;
+        self->displayLayer.hidden = _duoMetal != nil;
         
         // Tell our parent VC to hide the progress indicator
         [self->_callbacks videoContentShown];

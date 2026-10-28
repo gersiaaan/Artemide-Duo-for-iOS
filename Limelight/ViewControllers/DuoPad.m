@@ -10,6 +10,7 @@
 NSString* const DuoPadChangedNotification = @"DuoPadChanged";
 
 @implementation DuoPad {
+    BOOL _keyboardUsed;
     NSPointerArray* _targets;
     BOOL _attached;
     NSMutableDictionary<NSValue*, NSNumber*>* _last;   // controller -> pressed mask
@@ -44,6 +45,50 @@ NSString* const DuoPadChangedNotification = @"DuoPadChanged";
         }
     }
     return NO;
+}
+
+- (BOOL)focusVisible {
+    return _keyboardUsed || self.hasGamepad;
+}
+
+- (void)keyboard:(DuoPadKey)key {
+    if (!_keyboardUsed) {
+        _keyboardUsed = YES;
+        [[NSNotificationCenter defaultCenter] postNotificationName:DuoPadChangedNotification object:nil];
+    }
+    [self fire:key];
+}
+
++ (NSArray<UIKeyCommand*>*)keyCommandsWithAction:(SEL)action {
+    NSMutableArray* c = [NSMutableArray array];
+    void (^add)(NSString*, UIKeyModifierFlags, DuoPadKey, NSString*) = ^(NSString* input, UIKeyModifierFlags mods, DuoPadKey key, NSString* title) {
+        UIKeyCommand* k = [UIKeyCommand commandWithTitle:title ?: @"" image:nil action:action input:input modifierFlags:mods propertyList:@(key)];
+        if (title == nil) {
+            k.attributes = UIMenuElementAttributesHidden;
+        }
+        if (@available(iOS 15.0, *)) {
+            k.wantsPriorityOverSystemBehavior = YES;
+        }
+        [c addObject:k];
+    };
+    add(UIKeyInputUpArrow, 0, DuoPadUp, nil);
+    add(UIKeyInputDownArrow, 0, DuoPadDown, nil);
+    add(UIKeyInputLeftArrow, 0, DuoPadLeft, nil);
+    add(UIKeyInputRightArrow, 0, DuoPadRight, nil);
+    add(@"\r", 0, DuoPadA, @"Open / select");
+    add(@" ", 0, DuoPadA, nil);
+    add(UIKeyInputEscape, 0, DuoPadB, @"Back");
+    add(@".", UIKeyModifierCommand, DuoPadB, nil);
+    add(@"[", UIKeyModifierCommand, DuoPadB, nil);
+    add(@"\t", 0, DuoPadRB, @"Next tab / host");
+    add(@"\t", UIKeyModifierShift, DuoPadLB, @"Previous tab / host");
+    add(UIKeyInputRightArrow, UIKeyModifierCommand, DuoPadRB, nil);
+    add(UIKeyInputLeftArrow, UIKeyModifierCommand, DuoPadLB, nil);
+    add(@",", UIKeyModifierCommand, DuoPadY, @"Settings");
+    add(@"f", UIKeyModifierCommand, DuoPadX, @"Favourite / play again");
+    add(@"i", UIKeyModifierCommand, DuoPadSelect, @"Options");
+    add(UIKeyInputDelete, UIKeyModifierCommand, DuoPadStart, @"Quit all sessions");
+    return c;
 }
 
 - (void)changed:(NSNotification*)n {

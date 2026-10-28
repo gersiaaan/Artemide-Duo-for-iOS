@@ -35,7 +35,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (UIColor*)onColor:(UIColor*)c;
 /// UI scale for big screens (1 on phones, up to 1.5 on the iPad).
 + (CGFloat)scale;
-/// Inter in the closest weight.
+/// System font (SF Pro).
 + (UIFont*)font:(CGFloat)size weight:(UIFontWeight)weight;
 + (UIFont*)regular:(CGFloat)size;
 + (UIFont*)medium:(CGFloat)size;
@@ -43,7 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (UIFont*)bold:(CGFloat)size;
 /// Monospaced digits (clock, numbers).
 + (UIFont*)digits:(CGFloat)size weight:(UIFontWeight)weight;
-/// Registers Inter (SIL OFL 1.1) from the app bundle.
+/// (No-op: the app uses the system font, SF Pro.)
 + (void)registerFonts;
 /// "ARTEMIDE DUO" / "Artemide Duo" with DUO in the accent.
 + (NSAttributedString*)brand:(BOOL)upper size:(CGFloat)size;
@@ -82,6 +82,13 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)trackpadSwapAxis;
 + (NSInteger)dragHoldMs;              // hold to start a drag
 + (BOOL)rememberZoom;
+// Mouse / trackpad (Magic Keyboard)
++ (BOOL)localCursor;                  // smooth iPad-drawn cursor in desktop apps (games: raw mouse)
++ (NSInteger)mouseSpeed;              // %
++ (BOOL)naturalScroll;
+// Upscaling
++ (BOOL)metalFX;
++ (BOOL)metalFXSupported;
 // Controller
 + (NSInteger)deadzone;                // % of the stick range
 + (BOOL)gamepadMouse;                 // LB+RB+shortcut toggles stick-as-mouse
@@ -125,6 +132,11 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)isAppName:(nullable NSString*)name;
 /// Size of the video inside `bounds` for the chosen scale mode (same for drawing and touch).
 + (CGSize)videoSizeIn:(CGSize)bounds aspect:(CGFloat)aspect;
+@end
+
+#pragma mark - Scroll view that scrolls even when the drag starts on a row / button
+
+@interface DuoScrollView : UIScrollView
 @end
 
 #pragma mark - Play stats (last played, time, sessions, favourites)

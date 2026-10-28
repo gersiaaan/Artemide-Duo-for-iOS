@@ -201,7 +201,7 @@ static NSString* DuoInitials2(NSString* n) {
         [col setCustomSpacing:8 * d afterView:header];
 
         // ---------- host + stream chips ----------
-        UIScrollView* cs = [[UIScrollView alloc] init];
+        UIScrollView* cs = [[DuoScrollView alloc] init];
         cs.translatesAutoresizingMaskIntoConstraints = NO;
         cs.showsHorizontalScrollIndicator = NO;
         _chips = [self row:6 * d];
@@ -265,7 +265,7 @@ static NSString* DuoInitials2(NSString* n) {
         _body = [[UIStackView alloc] init];
         _body.translatesAutoresizingMaskIntoConstraints = NO;
         _body.alignment = UIStackViewAlignmentFill;
-        _listScroll = [[UIScrollView alloc] init];
+        _listScroll = [[DuoScrollView alloc] init];
         _listScroll.translatesAutoresizingMaskIntoConstraints = NO;
         _listScroll.showsVerticalScrollIndicator = NO;
         _listScroll.alwaysBounceVertical = YES;

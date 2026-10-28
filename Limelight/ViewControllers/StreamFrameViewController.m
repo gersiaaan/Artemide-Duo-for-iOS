@@ -38,6 +38,7 @@
 @end
 
 static NSString* sDuoSessionSummary;
+extern BOOL DuoLocalCursorActive;
 static NSString* sDuoLastClip;
 UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
 
@@ -132,6 +133,10 @@ UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
     _controllerSupport = [[ControllerSupport alloc] initWithConfig:self.streamConfig delegate:self];
     _inactivityTimer = nil;
     
+#if !TARGET_OS_TV
+    // Artemide Duo: smooth local cursor for desktop / remote apps; games keep the raw mouse.
+    DuoLocalCursorActive = [DuoPrefs localCursor] && [DuoPrefs isAppName:self.streamConfig.appName];
+#endif
     _streamView = [[StreamView alloc] initWithFrame:self.view.frame];
     [_streamView setupStreamView:_controllerSupport interactionDelegate:self config:self.streamConfig];
     
@@ -541,6 +546,7 @@ UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
     // Only cleanup when we're being destroyed
     if (parent == nil) {
 #if !TARGET_OS_TV
+        DuoLocalCursorActive = NO;
         [_duoConnect dismiss:NO];
         _duoConnect = nil;
         [_duoStatsTimer invalidate];
@@ -1144,7 +1150,8 @@ UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
     // Pointer lock breaks the UIKit mouse APIs, which is a problem because
     // GCMouse is horribly broken on iOS 14.0 for certain mice. Only lock
     // the cursor if there is a GCMouse present.
-    return [GCMouse mice].count > 0;
+    // Artemide Duo: no lock while the iPad draws the cursor itself (desktop apps).
+    return [GCMouse mice].count > 0 && !DuoLocalCursorActive;
 }
 #endif
 

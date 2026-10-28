@@ -17,6 +17,8 @@
 
 @import CoreMotion;
 
+extern BOOL DuoLocalCursorActive;
+
 @import GameController;
 @import AudioToolbox;
 
@@ -1123,9 +1125,22 @@ static void DuoKeyTap(short vk, char mods) {
 }
 
 -(void) registerMouseCallbacks:(GCMouse*) mouse API_AVAILABLE(ios(14.0)) {
+    // Artemide Duo: mouse / trackpad events on their own high-priority queue, not the busy
+    // main thread, so the cursor follows the finger without stutter.
+    static dispatch_queue_t mouseQueue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        mouseQueue = dispatch_queue_create("artemide.duo.mouse", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0));
+    });
+    mouse.handlerQueue = mouseQueue;
+    float speed = [DuoPrefs mouseSpeed] / 100.0f;
     mouse.mouseInput.mouseMovedHandler = ^(GCMouseInput * _Nonnull mouse, float deltaX, float deltaY) {
-        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;
-        self->accumulatedDeltaY += -deltaY / MOUSE_SPEED_DIVISOR;
+        if (DuoLocalCursorActive) {
+            // The iPad draws the cursor; positions go out from the pointer interaction.
+            return;
+        }
+        self->accumulatedDeltaX += deltaX * speed / MOUSE_SPEED_DIVISOR;
+        self->accumulatedDeltaY += -deltaY * speed / MOUSE_SPEED_DIVISOR;
         
         short truncatedDeltaX = (short)self->accumulatedDeltaX;
         short truncatedDeltaY = (short)self->accumulatedDeltaY;

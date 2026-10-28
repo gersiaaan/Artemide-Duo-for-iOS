@@ -328,7 +328,7 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
     UILabel* lb = DuoKeyPill(@"LB");
     UILabel* rb = DuoKeyPill(@"RB");
     _pills = @[lb, rb];
-    _tabScroll = [[UIScrollView alloc] init];
+    _tabScroll = [[DuoScrollView alloc] init];
     _tabScroll.translatesAutoresizingMaskIntoConstraints = NO;
     _tabScroll.showsHorizontalScrollIndicator = NO;
     UIStackView* tabs = [[UIStackView alloc] init];
@@ -398,7 +398,7 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
     _tabFade = fade;
 
     // content
-    _scroll = [[UIScrollView alloc] init];
+    _scroll = [[DuoScrollView alloc] init];
     _scroll.translatesAutoresizingMaskIntoConstraints = NO;
     _scroll.alwaysBounceVertical = YES;
     _scroll.delaysContentTouches = NO;
@@ -454,6 +454,23 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
         [weakSelf updateClock];
     }];
     [self updateClock];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self becomeFirstResponder];
+}
+
+- (BOOL)canBecomeFirstResponder {
+    return YES;
+}
+
+- (NSArray<UIKeyCommand*>*)keyCommands {
+    return self.presentedViewController != nil ? @[] : [DuoPad keyCommandsWithAction:@selector(duoKeyCommand:)];
+}
+
+- (void)duoKeyCommand:(UIKeyCommand*)c {
+    [[DuoPad shared] keyboard:(DuoPadKey)[c.propertyList integerValue]];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
@@ -781,12 +798,21 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
                     [self prefToggle:@"Swap axes" summary:@"For a rotated picture" key:@"duo_trackpad_swap" fallback:NO],
                     [self prefSlider:@"Hold to drag" summary:@"Hold a finger this long to start dragging" key:@"duo_drag_hold" fallback:650 min:150 max:1500 step:50 suffix:@" ms"],
                 ]),
-                DuoSec(@"Mouse", @[
+                DuoSec(@"Mouse & Magic Keyboard trackpad", @[
+                    [self prefToggle:@"Smooth local cursor in apps" summary:@"Desktop / remote apps: the iPad draws the pointer, so it never lags (the PC's own cursor follows it). Games always get the raw mouse." key:@"duo_local_cursor" fallback:YES],
+                    [self prefSlider:@"Mouse / trackpad speed" summary:@"Games and pointer-locked apps" key:@"duo_mouse_speed" fallback:100 min:20 max:400 step:10 suffix:@" %"],
+                    [self prefToggle:@"Natural scrolling" summary:@"Two-finger scroll direction like on the iPad" key:@"duo_natural_scroll" fallback:YES],
                     [self toggle:@"Citrix X1 mouse" summary:@"Bluetooth mouse support for Citrix X1 mice" get:^BOOL{
                         return ((DuoSettingsViewController*)w)->_btMouse;
                     } set:^(BOOL on) {
                         ((DuoSettingsViewController*)w)->_btMouse = on;
                     }],
+                ]),
+                DuoSec(@"Magic Keyboard (keys it doesn't have)", @[
+                    [self info:@"Esc" summary:@"Cmd + .  or  Cmd + `  (or set Caps Lock to Escape in iPadOS: Settings → General → Keyboard → Hardware Keyboard → Modifier Keys)"],
+                    [self info:@"F1 … F12" summary:@"Ctrl + Option + 1 … 0, - and ="],
+                    [self info:@"Windows key" summary:@"Cmd. Alt + Tab: Option + Tab (Cmd + Tab stays with iPadOS)"],
+                    [self info:@"In the app" summary:@"Arrows move, Return opens, Esc / Cmd + . goes back, Tab / Shift + Tab switch tabs, Cmd + , settings, Cmd + F favourite, Cmd + I options, Cmd + ⌫ quit all. Hold Cmd to see them."],
                 ]),
             ];
         case 4:
@@ -860,7 +886,9 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
                     }],
                 ]),
                 DuoSec(@"Upscaling", @[
-                    [self info:@"MetalFX upscaling" summary:@"Needs a Metal renderer; planned for a later version (iPhone only, the iPad Pro 2018 has no MetalFX)."],
+                    [DuoPrefs metalFXSupported]
+                        ? [self prefToggle:@"MetalFX upscaling (experimental)" summary:@"Apple's upscaler sharpens a lower stream resolution to the full screen (SDR only; no Picture in Picture while on)" key:@"duo_metalfx" fallback:NO]
+                        : [self info:@"MetalFX upscaling" summary:@"Not supported on this device (needs an A13 chip or newer; the iPad Pro 2018 has an A12X)."],
                 ]),
             ];
         default: {
@@ -1058,7 +1086,7 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
     UILabel* sum = nil;
     if (s.summary.length > 0 || s.kind == DuoRowList || s.kind == DuoRowSlider) {
         sum = DuoText(s.summary ?: @"", 11, [DuoTheme text2], NO);
-        sum.numberOfLines = 4;
+        sum.numberOfLines = s.kind == DuoRowInfo ? 0 : 4;
         [texts addArrangedSubview:sum];
     }
     [texts setContentHuggingPriority:1 forAxis:UILayoutConstraintAxisHorizontal];
@@ -1235,7 +1263,7 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
 #pragma mark Focus / controller
 
 - (void)showFocus {
-    BOOL pad = [DuoPad shared].hasGamepad;
+    BOOL pad = [DuoPad shared].focusVisible;
     for (NSInteger i = 0; i < (NSInteger)_rows.count; i++) {
         _rows[i].duoFocused = pad && i == _focus;
     }

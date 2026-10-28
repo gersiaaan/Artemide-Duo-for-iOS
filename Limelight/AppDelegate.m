@@ -32,7 +32,7 @@ static NSString* DB_NAME = @"Limelight_iOS.sqlite";
     if (shortcut != nil) {
         _pcUuidToLoad = (NSString*)[shortcut.userInfo objectForKey:@"UUID"];
     }
-    // Artemide Duo: Inter, dark alerts / sheets in the accent colour.
+    // Artemide Duo: dark alerts / sheets in the accent colour.
     [DuoTheme registerFonts];
     dispatch_async(dispatch_get_main_queue(), ^{
         for (UIWindow* w in application.windows) {

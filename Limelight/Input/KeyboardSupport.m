@@ -44,9 +44,74 @@
     }
 }
 
+// Artemide Duo: keys the Magic Keyboard (iPad) doesn't have.
+//   Cmd + .  /  Cmd + `   -> Esc
+//   Ctrl + Option + 1 … 0, -, =   -> F1 … F12
+// Held modifiers that the PC already saw are let go first (with a dummy key so Windows
+// doesn't open the Start menu / menu bar for a lone Win / Alt tap).
+static NSMutableDictionary<NSNumber*, NSNumber*>* sDuoRemapped;
+
++ (void)duoReleaseHeld:(UIKeyModifierFlags)flags API_AVAILABLE(ios(13.4)) {
+    LiSendKeyboardEvent(0x8000 | 0xE8, KEY_ACTION_DOWN, 0);
+    LiSendKeyboardEvent(0x8000 | 0xE8, KEY_ACTION_UP, 0);
+    if (flags & UIKeyModifierCommand) {
+        LiSendKeyboardEvent(0x8000 | 0x5B, KEY_ACTION_UP, 0);
+    }
+    if (flags & UIKeyModifierControl) {
+        LiSendKeyboardEvent(0x8000 | 0xA2, KEY_ACTION_UP, 0);
+    }
+    if (flags & UIKeyModifierAlternate) {
+        LiSendKeyboardEvent(0x8000 | 0xA4, KEY_ACTION_UP, 0);
+    }
+}
+
++ (BOOL)duoRemap:(UIKey*)key down:(BOOL)down API_AVAILABLE(ios(13.4)) {
+    if (sDuoRemapped == nil) {
+        sDuoRemapped = [NSMutableDictionary dictionary];
+    }
+    NSNumber* hid = @(key.keyCode);
+    if (!down) {
+        NSNumber* vk = sDuoRemapped[hid];
+        if (vk == nil) {
+            return NO;
+        }
+        [sDuoRemapped removeObjectForKey:hid];
+        LiSendKeyboardEvent(0x8000 | [vk shortValue], KEY_ACTION_UP, 0);
+        return YES;
+    }
+    UIKeyModifierFlags m = key.modifierFlags & (UIKeyModifierCommand | UIKeyModifierControl | UIKeyModifierAlternate | UIKeyModifierShift);
+    short vk = 0;
+    if (m == UIKeyModifierCommand &&
+        (key.keyCode == UIKeyboardHIDUsageKeyboardPeriod || key.keyCode == UIKeyboardHIDUsageKeyboardGraveAccentAndTilde)) {
+        vk = 0x1B;
+    }
+    else if (m == (UIKeyModifierControl | UIKeyModifierAlternate)) {
+        if (key.keyCode >= UIKeyboardHIDUsageKeyboard1 && key.keyCode <= UIKeyboardHIDUsageKeyboard9) {
+            vk = 0x70 + (key.keyCode - UIKeyboardHIDUsageKeyboard1);      // F1 … F9
+        } else if (key.keyCode == UIKeyboardHIDUsageKeyboard0) {
+            vk = 0x79;                                                     // F10
+        } else if (key.keyCode == UIKeyboardHIDUsageKeyboardHyphen) {
+            vk = 0x7A;                                                     // F11
+        } else if (key.keyCode == UIKeyboardHIDUsageKeyboardEqualSign) {
+            vk = 0x7B;                                                     // F12
+        }
+    }
+    if (vk == 0) {
+        return NO;
+    }
+    [self duoReleaseHeld:m];
+    sDuoRemapped[hid] = @(vk);
+    LiSendKeyboardEvent(0x8000 | vk, KEY_ACTION_DOWN, 0);
+    return YES;
+}
+
 + (BOOL)sendKeyEvent:(UIKey*)key down:(BOOL)down API_AVAILABLE(ios(13.4)) {
     char modifierFlags = 0;
     short keyCode = 0;
+    
+    if ([self duoRemap:key down:down]) {
+        return true;
+    }
     
     if (key.modifierFlags & UIKeyModifierShift) {
         modifierFlags |= MODIFIER_SHIFT;
