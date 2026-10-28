@@ -3,6 +3,7 @@ name: Artemide Duo for iOS
 on:
   push:
     branches: [ "artemide" ]
+    paths-ignore: [ "**.md" ]
   workflow_dispatch:
 
 permissions:
