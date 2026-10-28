@@ -1,0 +1,59 @@
+name: Artemide Duo for iOS
+
+on:
+  push:
+    branches: [ "artemide" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Version
+        id: ver
+        run: echo "v=$(cat IOS_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Download iOS platform
+        run: xcodebuild -downloadPlatform iOS || true
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project Moonlight.xcodeproj -scheme Moonlight -sdk iphoneos -configuration Release \
+            -archivePath "$PWD/build/ArtemideDuo.xcarchive" archive \
+            MARKETING_VERSION=${{ steps.ver.outputs.v }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGN_ENTITLEMENTS="" CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E "error:|\*\* (ARCHIVE|BUILD)" || true
+          test -d "build/ArtemideDuo.xcarchive/Products/Applications"
+
+      - name: Package IPA
+        run: |
+          APP=$(ls -d build/ArtemideDuo.xcarchive/Products/Applications/*.app | head -1)
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          cd build && zip -qry "ArtemideDuo-iOS-v${{ steps.ver.outputs.v }}.ipa" Payload
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-v${{ steps.ver.outputs.v }}-${{ github.run_number }}
+          name: Artemide Duo for iOS v${{ steps.ver.outputs.v }} (build ${{ github.run_number }})
+          prerelease: true
+          files: build/ArtemideDuo-iOS-v${{ steps.ver.outputs.v }}.ipa
