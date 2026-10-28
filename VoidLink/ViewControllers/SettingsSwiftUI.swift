@@ -3418,14 +3418,8 @@ final class SettingsSession: NSObject, ObservableObject {
             ),
             toggleItem(
                 \.redirectMic,
-                isAvailable: {
-#if os(tvOS)
-                    if #available(tvOS 17.0, *) { return true }
-                    return false
-#else
-                    return true
-#endif
-                }(),
+                // Artemide Duo: microphone redirection removed.
+                isAvailable: false,
                 isEnabled: { _ in
 #if os(tvOS)
                     // A stream started without a host mic channel must reconnect to negotiate one.
@@ -3454,9 +3448,7 @@ final class SettingsSession: NSObject, ObservableObject {
                 valueText: { session, model in
                     session.volumePercentText(model.value)
                 },
-                isVisible: { session in
-                    session.itemRegistry.redirectMic.value
-                },
+                isVisible: { _ in false },
                 onValueChanged: { session in
                     session.micVolumeChanged()
                 }

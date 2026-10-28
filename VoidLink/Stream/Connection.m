@@ -985,9 +985,8 @@ void ClDs5HapticsIrV2(const LI_DS5_HAPTICS_IR_FRAME_V2* frame)
     _streamConfig.bitrate = config.bitRate;
     _streamConfig.supportedVideoFormats = config.supportedVideoFormats;
     _streamConfig.audioConfiguration = config.audioConfiguration;
-    // Artemide Duo: only open the host microphone channel when the user turned the mic on.
-    // Always negotiating it left Vibeshine/Apollo hanging after the session ended.
-    _streamConfig.redirectMic = config.redirectMic;
+    // Artemide Duo: no microphone channel to the host at all (it crashed Vibeshine when the session ended).
+    _streamConfig.redirectMic = false;
     [Connection setVolume:config.localVolume];
     
     // Since we require iOS 12 or above, we're guaranteed to be running
