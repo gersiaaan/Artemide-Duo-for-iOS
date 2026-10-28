@@ -217,6 +217,33 @@ static double DuoLin(CGFloat s) {
 + (BOOL)clipboardToast { return [self boolFor:@"duo_clipboard_toast" fallback:YES]; }
 + (BOOL)hideClipboardContent { return [self boolFor:@"duo_clipboard_hide" fallback:YES]; }
 
++ (NSString*)clientId {
+    static NSString* cid;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSUserDefaults* d = [NSUserDefaults standardUserDefaults];
+        cid = [d stringForKey:@"duo_client_id"];
+        if (cid.length != 16) {
+            UInt64 v = ((UInt64)arc4random() << 32) | arc4random();
+            cid = [NSString stringWithFormat:@"%016llX", v];
+            [d setObject:cid forKey:@"duo_client_id"];
+        }
+    });
+    return cid;
+}
+
++ (NSString*)clientName {
+    NSString* m = [self deviceModel];
+    NSDictionary* names = @{@"iPad8,1": @"iPad-Pro-11", @"iPad8,2": @"iPad-Pro-11", @"iPad8,3": @"iPad-Pro-11", @"iPad8,4": @"iPad-Pro-11",
+                            @"iPhone14,4": @"iPhone-13-mini", @"iPhone16,2": @"iPhone-15-Pro-Max", @"iPhone16,1": @"iPhone-15-Pro"};
+    NSString* n = names[m];
+    if (n == nil) {
+        NSString* kind = [UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad ? @"iPad" : @"iPhone";
+        n = [NSString stringWithFormat:@"%@-%@", kind, [[m stringByReplacingOccurrencesOfString:@"," withString:@"-"] stringByReplacingOccurrencesOfString:kind withString:@""]];
+    }
+    return [@"ArtemideDuo-" stringByAppendingString:n];
+}
+
 + (NSString*)deviceModel {
     size_t size = 0;
     sysctlbyname("hw.machine", NULL, &size, NULL, 0);

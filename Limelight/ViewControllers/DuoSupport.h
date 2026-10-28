@@ -119,6 +119,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)clipboardToast;
 + (BOOL)hideClipboardContent;
 
+/// This installation's own client id (sent as uniqueid instead of Moonlight's shared one).
++ (NSString*)clientId;
+/// Name the PC shows for this device, e.g. "ArtemideDuo-iPad-Pro-11".
++ (NSString*)clientName;
 /// Hardware model, e.g. "iPad8,1".
 + (NSString*)deviceModel;
 /// iPad Pro 11" (1st generation, 2018): 2388 x 1668, 120 Hz.

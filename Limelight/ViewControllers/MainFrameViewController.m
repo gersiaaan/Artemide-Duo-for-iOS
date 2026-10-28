@@ -535,15 +535,15 @@ static NSMutableSet* hostList;
                         NSString* message;
                         
                         if (portTestResult == 0) {
-                            message = @"This network does not appear to be blocking Moonlight. If you still have trouble connecting, check your PC's firewall settings.\n\nVisit the Moonlight Setup Guide on GitHub for additional setup help and troubleshooting steps.";
+                            message = @"This network does not appear to be blocking Artemide Duo. If you still have trouble connecting, check your PC's firewall settings.\n\nVisit the setup guide on GitHub for additional setup help and troubleshooting steps.";
                         }
                         else if (portTestResult == ML_TEST_RESULT_INCONCLUSIVE) {
-                            message = @"The network test could not be performed because none of Moonlight's connection testing servers were reachable. Check your Internet connection or try again later.";
+                            message = @"The network test could not be performed because none of the connection testing servers were reachable. Check your Internet connection or try again later.";
                         }
                         else {
                             char blockedPorts[512];
                             LiStringifyPortFlags(portTestResult, "\n", blockedPorts, sizeof(blockedPorts));
-                            message = [NSString stringWithFormat:@"Your current network connection seems to be blocking Moonlight. Streaming may not work while connected to this network.\n\nThe following network ports were blocked:\n%s", blockedPorts];
+                            message = [NSString stringWithFormat:@"Your current network connection seems to be blocking Artemide Duo. Streaming may not work while connected to this network.\n\nThe following network ports were blocked:\n%s", blockedPorts];
                         }
                         
                         UIAlertController* netTestAlert = [UIAlertController alertControllerWithTitle:@"Network Test Complete" message:message preferredStyle:UIAlertControllerStyleAlert];
@@ -585,7 +585,7 @@ static NSMutableSet* hostList;
 
 - (void) addHostClicked {
     Log(LOG_D, @"Clicked add host");
-    UIAlertController* alertController = [UIAlertController alertControllerWithTitle:@"Add Host Manually" message:@"If Moonlight doesn't find your local gaming PC automatically,\nenter the IP address of your PC" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController* alertController = [UIAlertController alertControllerWithTitle:@"Add Host Manually" message:@"If Artemide Duo doesn't find your local gaming PC automatically,\nenter the IP address of your PC" preferredStyle:UIAlertControllerStyleAlert];
     [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction* action){
         NSString* hostAddress = [((UITextField*)[[alertController textFields] objectAtIndex:0]).text trim];
@@ -605,7 +605,7 @@ static NSMutableSet* hostList;
                         unsigned int portTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443,
                                                                                 ML_PORT_FLAG_TCP_47984 | ML_PORT_FLAG_TCP_47989);
                         if (portTestResults != ML_TEST_RESULT_INCONCLUSIVE && portTestResults != 0) {
-                            error = [error stringByAppendingString:@"\n\nYour device's network connection is blocking Moonlight. Streaming may not work while connected to this network."];
+                            error = [error stringByAppendingString:@"\n\nYour device's network connection is blocking Artemide Duo. Streaming may not work while connected to this network."];
                         }
                         
                         UIAlertController* hostNotFoundAlert = [UIAlertController alertControllerWithTitle:@"Add Host Manually" message:error preferredStyle:UIAlertControllerStyleAlert];
@@ -1593,20 +1593,6 @@ static NSMutableSet* hostList;
 }
 
 #if !TARGET_OS_TV
-#pragma mark - Artemide Duo hardware keyboard
-
-- (NSArray<UIKeyCommand*>*)keyCommands {
-    // Only once our screen is on and in front.
-    if (_duoRoot == nil || _duoRoot.hidden || self.presentedViewController != nil || self.view.window == nil) {
-        return @[];
-    }
-    return [DuoPad keyCommandsWithAction:@selector(duoKeyCommand:)];
-}
-
-- (void)duoKeyCommand:(UIKeyCommand*)c {
-    [[DuoPad shared] keyboard:(DuoPadKey)[c.propertyList integerValue]];
-}
-
 #pragma mark - Artemide Duo home
 
 - (void)duoShowPage:(BOOL)apps {

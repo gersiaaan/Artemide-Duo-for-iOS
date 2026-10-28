@@ -824,7 +824,7 @@ UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
         
         if (portTestResults != ML_TEST_RESULT_INCONCLUSIVE && portTestResults != 0) {
             title = @"Connection Error";
-            message = @"Your device's network connection is blocking Moonlight. Streaming may not work while connected to this network.";
+            message = @"Your device's network connection is blocking Artemide Duo. Streaming may not work while connected to this network.";
         }
         else {
             switch (errorCode) {
@@ -921,7 +921,7 @@ UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
             message = [message stringByAppendingString:[NSString stringWithFormat:@"\n\nCheck your firewall and port forwarding rules for port(s):\n%s", failingPorts]];
         }
         if (portTestResults != ML_TEST_RESULT_INCONCLUSIVE && portTestResults != 0) {
-            message = [message stringByAppendingString:@"\n\nYour device's network connection is blocking Moonlight. Streaming may not work while connected to this network."];
+            message = [message stringByAppendingString:@"\n\nYour device's network connection is blocking Artemide Duo. Streaming may not work while connected to this network."];
         }
         
         UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Connection Failed"

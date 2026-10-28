@@ -9,6 +9,26 @@
 
 NSString* const DuoPadChangedNotification = @"DuoPadChanged";
 
+// Finds the current first responder (to leave typing in text fields alone).
+static __weak id sDuoFirstResponder;
+
+@interface UIResponder (DuoFirstResponder)
+- (void)duoFindFirstResponder:(id)sender;
+@end
+
+@implementation UIResponder (DuoFirstResponder)
+- (void)duoFindFirstResponder:(id)sender {
+    sDuoFirstResponder = self;
+}
+@end
+
+static BOOL DuoTyping(void) {
+    sDuoFirstResponder = nil;
+    [[UIApplication sharedApplication] sendAction:@selector(duoFindFirstResponder:) to:nil from:nil forEvent:nil];
+    id r = sDuoFirstResponder;
+    return [r isKindOfClass:[UITextField class]] || [r isKindOfClass:[UITextView class]];
+}
+
 @implementation DuoPad {
     BOOL _keyboardUsed;
     NSPointerArray* _targets;
@@ -34,6 +54,9 @@ NSString* const DuoPadChangedNotification = @"DuoPadChanged";
         _last = [NSMutableDictionary dictionary];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(changed:) name:GCControllerDidConnectNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(changed:) name:GCControllerDidDisconnectNotification object:nil];
+        if (@available(iOS 14.0, *)) {
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(changed:) name:GCKeyboardDidConnectNotification object:nil];
+        }
     }
     return self;
 }
@@ -145,6 +168,9 @@ NSString* const DuoPadChangedNotification = @"DuoPadChanged";
 - (void)detach {
     _attached = NO;
     [self stopRepeat];
+    if (@available(iOS 14.0, *)) {
+        GCKeyboard.coalescedKeyboard.keyboardInput.keyChangedHandler = nil;
+    }
     for (GCController* c in [GCController controllers]) {
         if (c.extendedGamepad != nil) {
             c.extendedGamepad.valueChangedHandler = nil;
@@ -153,7 +179,57 @@ NSString* const DuoPadChangedNotification = @"DuoPadChanged";
     [_last removeAllObjects];
 }
 
+// Hardware keyboard (Magic Keyboard) through GameController: no responder chain involved.
+- (void)installKeyboard API_AVAILABLE(ios(14.0)) {
+    GCKeyboardInput* kb = GCKeyboard.coalescedKeyboard.keyboardInput;
+    if (kb == nil) {
+        return;
+    }
+    __weak DuoPad* weakSelf = self;
+    kb.keyChangedHandler = ^(GCKeyboardInput* k, GCControllerButtonInput* key, GCKeyCode code, BOOL pressed) {
+        DuoPad* s = weakSelf;
+        if (s == nil) {
+            return;
+        }
+        BOOL cmd = [k buttonForKeyCode:GCKeyCodeLeftGUI].pressed || [k buttonForKeyCode:GCKeyCodeRightGUI].pressed;
+        BOOL shift = [k buttonForKeyCode:GCKeyCodeLeftShift].pressed || [k buttonForKeyCode:GCKeyCodeRightShift].pressed;
+        NSInteger dk = -1;
+        BOOL repeats = NO;
+        if (code == GCKeyCodeUpArrow) { dk = DuoPadUp; repeats = YES; }
+        else if (code == GCKeyCodeDownArrow) { dk = DuoPadDown; repeats = YES; }
+        else if (code == GCKeyCodeLeftArrow) { dk = cmd ? DuoPadLB : DuoPadLeft; repeats = !cmd; }
+        else if (code == GCKeyCodeRightArrow) { dk = cmd ? DuoPadRB : DuoPadRight; repeats = !cmd; }
+        else if (code == GCKeyCodeReturnOrEnter || code == GCKeyCodeKeypadEnter || code == GCKeyCodeSpacebar) { dk = DuoPadA; }
+        else if (code == GCKeyCodeEscape) { dk = DuoPadB; }
+        else if (cmd && (code == GCKeyCodePeriod || code == GCKeyCodeOpenBracket)) { dk = DuoPadB; }
+        else if (code == GCKeyCodeTab) { dk = shift ? DuoPadLB : DuoPadRB; }
+        else if (cmd && code == GCKeyCodeComma) { dk = DuoPadY; }
+        else if (cmd && code == GCKeyCodeKeyF) { dk = DuoPadX; }
+        else if (cmd && code == GCKeyCodeKeyI) { dk = DuoPadSelect; }
+        else if (cmd && code == GCKeyCodeDeleteOrBackspace) { dk = DuoPadStart; }
+        if (dk < 0) {
+            return;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!s->_attached || DuoTyping()) {
+                return;
+            }
+            if (pressed) {
+                [s keyboard:(DuoPadKey)dk];
+                if (repeats) {
+                    [s startRepeat:(DuoPadKey)dk];
+                }
+            } else if (s->_repeat != nil && s->_repeatKey == (DuoPadKey)dk) {
+                [s stopRepeat];
+            }
+        });
+    };
+}
+
 - (void)install {
+    if (@available(iOS 14.0, *)) {
+        [self installKeyboard];
+    }
     for (GCController* c in [GCController controllers]) {
         GCExtendedGamepad* g = c.extendedGamepad;
         if (g == nil) {

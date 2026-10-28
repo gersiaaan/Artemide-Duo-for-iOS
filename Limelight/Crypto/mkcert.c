@@ -52,7 +52,7 @@ void mkcert(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int years) {
 
     X509_NAME* name = X509_get_subject_name(cert);
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
-                               (const unsigned char*)"NVIDIA GameStream Client",
+                               (const unsigned char*)"Artemide Duo",
                                -1, -1, 0);
     X509_set_issuer_name(cert, name);
 

@@ -55,8 +55,9 @@
     self = [super init];
     // Use the same UID for all Moonlight clients to allow them
     // quit games started on another Moonlight client.
-    _uniqueId = @"0123456789ABCDEF";
-    _deviceName = deviceName;
+    // Artemide Duo: own id and name, so the PC never mixes it up with Moonlight (or another device).
+    _uniqueId = [DuoPrefs clientId];
+    _deviceName = [DuoPrefs clientName];
     _serverCert = serverCert;
     
     NSString* address = [Utils addressPortStringToAddress:hostAddressPortString];

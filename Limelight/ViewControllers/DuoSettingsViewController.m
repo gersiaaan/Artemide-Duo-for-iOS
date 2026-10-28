@@ -456,23 +456,6 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
     [self updateClock];
 }
 
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-    [self becomeFirstResponder];
-}
-
-- (BOOL)canBecomeFirstResponder {
-    return YES;
-}
-
-- (NSArray<UIKeyCommand*>*)keyCommands {
-    return self.presentedViewController != nil ? @[] : [DuoPad keyCommandsWithAction:@selector(duoKeyCommand:)];
-}
-
-- (void)duoKeyCommand:(UIKeyCommand*)c {
-    [[DuoPad shared] keyboard:(DuoPadKey)[c.propertyList integerValue]];
-}
-
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [[DuoPad shared] remove:self];
@@ -812,7 +795,7 @@ static DuoSection* DuoSec(NSString* title, NSArray<DuoSetting*>* rows) {
                     [self info:@"Esc" summary:@"Cmd + .  or  Cmd + `  (or set Caps Lock to Escape in iPadOS: Settings → General → Keyboard → Hardware Keyboard → Modifier Keys)"],
                     [self info:@"F1 … F12" summary:@"Ctrl + Option + 1 … 0, - and ="],
                     [self info:@"Windows key" summary:@"Cmd. Alt + Tab: Option + Tab (Cmd + Tab stays with iPadOS)"],
-                    [self info:@"In the app" summary:@"Arrows move, Return opens, Esc / Cmd + . goes back, Tab / Shift + Tab switch tabs, Cmd + , settings, Cmd + F favourite, Cmd + I options, Cmd + ⌫ quit all. Hold Cmd to see them."],
+                    [self info:@"In the app" summary:@"Arrows move, Return opens, Esc / Cmd + . goes back, Tab / Shift + Tab switch tabs, Cmd + , settings, Cmd + F favourite, Cmd + I options, Cmd + ⌫ quit all. "],
                 ]),
             ];
         case 4:
