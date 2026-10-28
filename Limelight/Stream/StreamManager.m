@@ -25,6 +25,7 @@
     UIView* _renderView;
     id<ConnectionCallbacks> _callbacks;
     Connection* _connection;
+    VideoDecoderRenderer* _duoRenderer;
 }
 
 - (id) initWithConfig:(StreamConfiguration*)config renderView:(UIView*)view connectionCallbacks:(id<ConnectionCallbacks>)callbacks {
@@ -100,6 +101,7 @@
     // Initializing the renderer must be done on the main thread
     dispatch_async(dispatch_get_main_queue(), ^{
         VideoDecoderRenderer* renderer = [[VideoDecoderRenderer alloc] initWithView:self->_renderView callbacks:self->_callbacks streamAspectRatio:(float)self->_config.width / (float)self->_config.height useFramePacing:self->_config.useFramePacing];
+        self->_duoRenderer = renderer;
         self->_connection = [[Connection alloc] initWithConfig:self->_config renderer:renderer connectionCallbacks:self->_callbacks];
         NSOperationQueue* opQueue = [[NSOperationQueue alloc] init];
         [opQueue addOperation:self->_connection];
@@ -187,6 +189,39 @@
             stats.networkDroppedFrames / interval,
             latencyString,
             hostProcessingString];
+}
+
+- (VideoDecoderRenderer*) duoRenderer {
+    return _duoRenderer;
+}
+
+- (long long) duoTotalBytes {
+    return _connection == nil ? 0 : [_connection duoTotalBytes];
+}
+
+- (NSDictionary*) duoStats {
+    video_stats_t stats;
+    if (!_connection || ![_connection getVideoStats:&stats]) {
+        return nil;
+    }
+    float interval = MAX(0.001, stats.endTime - stats.startTime);
+    uint32_t rtt = 0, variance = 0;
+    BOOL hasRtt = LiGetEstimatedRttInfo(&rtt, &variance);
+    float hostAvg = stats.framesWithHostProcessingLatency ? (float)stats.totalHostProcessingLatency / stats.framesWithHostProcessingLatency / 10.f : 0;
+    return @{
+        @"width": @(_config.width),
+        @"height": @(_config.height),
+        @"codec": [_connection getActiveCodecName] ?: @"",
+        @"fps": @(stats.receivedFrames / interval),
+        @"mbps": @(stats.receivedBytes * 8.0 / 1000000.0 / interval),
+        @"rtt": @(hasRtt ? rtt : 0),
+        @"rttVar": @(hasRtt ? variance : 0),
+        @"loss": @(stats.totalFrames > 0 ? stats.networkDroppedFrames * 100.0 / stats.totalFrames : 0),
+        @"hostMin": @(stats.minHostProcessingLatency / 10.f),
+        @"hostMax": @(stats.maxHostProcessingLatency / 10.f),
+        @"hostAvg": @(hostAvg),
+        @"hasHost": @(stats.framesWithHostProcessingLatency != 0),
+    };
 }
 
 @end

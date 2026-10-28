@@ -37,6 +37,7 @@ static int activeVideoFormat;
 static video_stats_t currentVideoStats;
 static video_stats_t lastVideoStats;
 static NSLock* videoStatsLock;
+static long long duoTotalBytes;
 
 static SDL_AudioDeviceID audioDevice;
 static OPUS_MULTISTREAM_CONFIGURATION audioConfig;
@@ -52,6 +53,7 @@ int DrDecoderSetup(int videoFormat, int width, int height, int redrawRate, void*
     activeVideoFormat = videoFormat;
     memset(&currentVideoStats, 0, sizeof(currentVideoStats));
     memset(&lastVideoStats, 0, sizeof(lastVideoStats));
+    duoTotalBytes = 0;
     return 0;
 }
 
@@ -78,6 +80,11 @@ void DrStop(void)
     // No stats yet
     [videoStatsLock unlock];
     return NO;
+}
+
+-(long long) duoTotalBytes
+{
+    return duoTotalBytes;
 }
 
 -(NSString*) getActiveCodecName
@@ -178,6 +185,8 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit)
     
     currentVideoStats.receivedFrames++;
     currentVideoStats.totalFrames++;
+    currentVideoStats.receivedBytes += decodeUnit->fullLength;
+    duoTotalBytes += decodeUnit->fullLength;
 
     PLENTRY entry = decodeUnit->bufferList;
     while (entry != NULL) {

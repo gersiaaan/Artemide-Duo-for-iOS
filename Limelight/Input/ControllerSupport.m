@@ -12,7 +12,10 @@
 #import "OnScreenControls.h"
 
 #import "DataManager.h"
+#import "DuoSupport.h"
 #include "Limelight.h"
+
+@import CoreMotion;
 
 @import GameController;
 @import AudioToolbox;
@@ -46,6 +49,21 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
     char _controllerNumbers;
     bool _multiController;
     bool _swapABXYButtons;
+
+    // Artemide Duo
+    int _duoLastFlags;
+    int _duoSwallow;
+    CFTimeInterval _duoLastShortcut;
+    float _duoDeadzone;
+    NSTimer* _duoMouseTimer;
+    float _duoLX, _duoLY, _duoRX, _duoRY;
+    float _duoAccX, _duoAccY, _duoAccScroll;
+    CMMotionManager* _duoMotion;
+    NSTimer* _duoGyroTimer;
+    NSTimer* _duoAccelTimer;
+    NSTimer* _duoRumbleTimer;
+    UIImpactFeedbackGenerator* _duoHaptic;
+    unsigned short _duoRumbleLow, _duoRumbleHigh;
 }
 
 // UPDATE_BUTTON_FLAG(controller, flag, pressed)
@@ -60,6 +78,11 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
     if (controller == nil && controllerNumber == 0 && _oscEnabled) {
         // TODO: Rumble emulation for OSC
     }
+    if ((controller == nil || (controller.lowFreqMotor == nil && controller.highFreqMotor == nil)) && [DuoPrefs rumbleFallback]) {
+        // Artemide Duo: no rumble on this controller -> vibrate the iPhone.
+        [self duoDeviceRumbleLow:lowFreqMotor high:highFreqMotor];
+        return;
+    }
     if (controller == nil) {
         // No connected controller for this player
         return;
@@ -67,6 +90,34 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
     
     [controller.lowFreqMotor setMotorAmplitude:lowFreqMotor];
     [controller.highFreqMotor setMotorAmplitude:highFreqMotor];
+}
+
+-(void) duoDeviceRumbleLow:(unsigned short)low high:(unsigned short)high
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_duoRumbleLow = low;
+        self->_duoRumbleHigh = high;
+        if (low == 0 && high == 0) {
+            [self->_duoRumbleTimer invalidate];
+            self->_duoRumbleTimer = nil;
+            return;
+        }
+        if (self->_duoRumbleTimer != nil) {
+            return;
+        }
+        if (self->_duoHaptic == nil) {
+            self->_duoHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleHeavy];
+        }
+        [self->_duoHaptic prepare];
+        self->_duoRumbleTimer = [NSTimer scheduledTimerWithTimeInterval:0.06 repeats:YES block:^(NSTimer* t) {
+            float k = MAX(self->_duoRumbleLow, self->_duoRumbleHigh) / 65535.0f;
+            if (k <= 0.02f) {
+                return;
+            }
+            [self->_duoHaptic impactOccurredWithIntensity:MIN(1.0f, 0.25f + k)];
+        }];
+        [self->_duoRumbleTimer fire];
+    });
 }
 
 -(void) rumbleTriggers:(uint16_t)controllerNumber leftTrigger:(uint16_t)leftTrigger rightTrigger:(uint16_t)rightTrigger
@@ -94,7 +145,10 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
         }
         
         if (controller.gamepad.motion == nil) {
-            // No motion supported for this controller
+            // Artemide Duo: no motion sensors on this controller -> the device's own gyro.
+            if ([DuoPrefs motionFallback]) {
+                [self duoDeviceMotion:controllerNumber type:motionType rate:reportRateHz];
+            }
             return;
         }
         
@@ -170,6 +224,46 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
             }
         }
     }
+}
+
+-(void) duoDeviceMotion:(uint16_t)controllerNumber type:(uint8_t)motionType rate:(uint16_t)reportRateHz
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_duoMotion == nil) {
+            self->_duoMotion = [[CMMotionManager alloc] init];
+        }
+        CMMotionManager* m = self->_duoMotion;
+        if (motionType == LI_MOTION_TYPE_GYRO) {
+            [self->_duoGyroTimer invalidate];
+            self->_duoGyroTimer = nil;
+            if (reportRateHz && m.gyroAvailable) {
+                m.gyroUpdateInterval = 1.0 / reportRateHz;
+                [m startGyroUpdates];
+                self->_duoGyroTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / reportRateHz repeats:YES block:^(NSTimer* t) {
+                    CMRotationRate r = m.gyroData.rotationRate;
+                    // Landscape: the device's y axis is the controller's x (rad/s -> deg/s).
+                    LiSendControllerMotionEvent((uint8_t)controllerNumber, LI_MOTION_TYPE_GYRO,
+                                                r.y * 57.2957795f, r.z * 57.2957795f, r.x * 57.2957795f);
+                }];
+            } else {
+                [m stopGyroUpdates];
+            }
+        } else if (motionType == LI_MOTION_TYPE_ACCEL) {
+            [self->_duoAccelTimer invalidate];
+            self->_duoAccelTimer = nil;
+            if (reportRateHz && m.accelerometerAvailable) {
+                m.accelerometerUpdateInterval = 1.0 / reportRateHz;
+                [m startAccelerometerUpdates];
+                self->_duoAccelTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / reportRateHz repeats:YES block:^(NSTimer* t) {
+                    CMAcceleration a = m.accelerometerData.acceleration;
+                    LiSendControllerMotionEvent((uint8_t)controllerNumber, LI_MOTION_TYPE_ACCEL,
+                                                a.y * -9.80665f, a.z * -9.80665f, a.x * -9.80665f);
+                }];
+            } else {
+                [m stopAccelerometerUpdates];
+            }
+        }
+    });
 }
 
 -(void) setControllerLed:(uint16_t)controllerNumber r:(uint8_t)r g:(uint8_t)g b:(uint8_t)b {
@@ -321,9 +415,170 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
     return (_multiController ? _controllerNumbers : 1) | (_oscEnabled ? 1 : 0);
 }
 
+#pragma mark - Artemide Duo: shortcuts, menu, controller as mouse, deadzone
+
+static int DuoFlagForButton(NSString* b) {
+    if ([b isEqualToString:@"A"]) return A_FLAG;
+    if ([b isEqualToString:@"B"]) return B_FLAG;
+    if ([b isEqualToString:@"X"]) return X_FLAG;
+    if ([b isEqualToString:@"Y"]) return Y_FLAG;
+    if ([b isEqualToString:@"START"]) return PLAY_FLAG;
+    if ([b isEqualToString:@"SELECT"]) return BACK_FLAG;
+    if ([b isEqualToString:@"L3"]) return LS_CLK_FLAG;
+    if ([b isEqualToString:@"R3"]) return RS_CLK_FLAG;
+    return 0;
+}
+
+static void DuoDeadzone(short* x, short* y, float dz) {
+    if (dz <= 0) {
+        return;
+    }
+    float fx = *x / 32767.0f, fy = *y / 32767.0f;
+    float m = sqrtf(fx * fx + fy * fy);
+    if (m < dz) {
+        *x = 0;
+        *y = 0;
+        return;
+    }
+    float k = MIN(1.0f, (m - dz) / (1 - dz)) / m;
+    *x = (short)MAX(-32767, MIN(32767, fx * k * 32767));
+    *y = (short)MAX(-32767, MIN(32767, fy * k * 32767));
+}
+
+-(void) setDuoMouseMode:(BOOL)on
+{
+    _duoMouseMode = on;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self->_duoMouseTimer invalidate];
+        self->_duoMouseTimer = nil;
+        if (on) {
+            self->_duoMouseTimer = [NSTimer scheduledTimerWithTimeInterval:0.008 repeats:YES block:^(NSTimer* t) {
+                [self duoMouseTick];
+            }];
+            // Release everything the game might still see as held.
+            for (Controller* c in [self->_controllers allValues]) {
+                LiSendMultiControllerEvent(self->_multiController ? c.playerIndex : 0, [self getActiveGamepadMask], 0, 0, 0, 0, 0, 0, 0);
+            }
+        }
+    });
+}
+
+-(void) duoMouseTick
+{
+    // Soft curve: fine when slightly pushed, fast when fully pushed.
+    float lx = _duoLX, ly = _duoLY, ry = _duoRY;
+    float dead = 0.12f;
+    float ax = fabsf(lx) < dead ? 0 : (fabsf(lx) - dead) / (1 - dead);
+    float ay = fabsf(ly) < dead ? 0 : (fabsf(ly) - dead) / (1 - dead);
+    _duoAccX += copysignf(ax * ax, lx) * 14.0f;
+    _duoAccY += copysignf(ay * ay, -ly) * 14.0f;
+    short dx = (short)_duoAccX, dy = (short)_duoAccY;
+    if (dx != 0 || dy != 0) {
+        LiSendMouseMoveEvent(dx, dy);
+        _duoAccX -= dx;
+        _duoAccY -= dy;
+    }
+    float as = fabsf(ry) < dead ? 0 : (fabsf(ry) - dead) / (1 - dead);
+    _duoAccScroll += copysignf(as * as, ry) * 28.0f;
+    short sc = (short)_duoAccScroll;
+    if (sc != 0) {
+        LiSendHighResScrollEvent(sc);
+        _duoAccScroll -= sc;
+    }
+}
+
+static void DuoKeyTap(short vk, char mods) {
+    LiSendKeyboardEvent(0x8000 | vk, KEY_ACTION_DOWN, mods);
+    usleep(30 * 1000);
+    LiSendKeyboardEvent(0x8000 | vk, KEY_ACTION_UP, mods);
+}
+
+/// Returns YES when the state must not reach the game.
+-(BOOL) duoHandle:(Controller*)controller
+{
+    int flags;
+    short lx, ly, rx, ry;
+    @synchronized(controller) {
+        flags = controller.lastButtonFlags;
+        lx = controller.lastLeftStickX;
+        ly = controller.lastLeftStickY;
+        rx = controller.lastRightStickX;
+        ry = controller.lastRightStickY;
+    }
+    int pressed = flags & ~_duoLastFlags;
+    int released = _duoLastFlags & ~flags;
+    _duoLastFlags = flags;
+
+    // Stream menu open: the controller drives it.
+    void (^menu)(NSInteger) = self.duoMenuKeys;
+    if (menu != nil) {
+        NSArray* map = @[@[@(UP_FLAG), @0], @[@(DOWN_FLAG), @1], @[@(LEFT_FLAG), @2], @[@(RIGHT_FLAG), @3],
+                         @[@(A_FLAG), @4], @[@(B_FLAG), @5], @[@(X_FLAG), @6], @[@(Y_FLAG), @7]];
+        for (NSArray* m in map) {
+            if (pressed & [m[0] intValue]) {
+                NSInteger k = [m[1] integerValue];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    menu(k);
+                });
+            }
+        }
+        _duoSwallow |= flags;
+        return YES;
+    }
+
+    // LB + RB + button: Artemide Duo shortcuts (the button never reaches the game).
+    _duoSwallow &= flags;
+    if ((flags & LB_FLAG) && (flags & RB_FLAG) && pressed) {
+        for (NSString* action in [DuoPrefs shortcutActions]) {
+            int f = DuoFlagForButton([DuoPrefs shortcutButton:action]);
+            if (f != 0 && (pressed & f)) {
+                _duoSwallow |= f;
+                CFTimeInterval now = CACurrentMediaTime();
+                if (now - _duoLastShortcut > 0.25) {
+                    _duoLastShortcut = now;
+                    id<ControllerSupportDelegate> del = _delegate;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if ([del respondsToSelector:@selector(duoShortcut:)]) {
+                            [del duoShortcut:action];
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    if (_duoMouseMode) {
+        _duoLX = lx / 32767.0f;
+        _duoLY = ly / 32767.0f;
+        _duoRX = rx / 32767.0f;
+        _duoRY = ry / 32767.0f;
+        int live = ~_duoSwallow;
+        if ((pressed & A_FLAG) & live) LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_LEFT);
+        if (released & A_FLAG) LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
+        if ((pressed & B_FLAG) & live) LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_RIGHT);
+        if (released & B_FLAG) LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_RIGHT);
+        if ((pressed & X_FLAG) & live) {
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                DuoKeyTap(0x5B, 0);
+            });
+        }
+        if ((pressed & Y_FLAG) & live) {
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                DuoKeyTap(0x09, MODIFIER_ALT);
+            });
+        }
+        return YES;
+    }
+    return NO;
+}
+
 -(void) updateFinished:(Controller*)controller
 {
     BOOL exitRequested = NO;
+    
+    if ([self duoHandle:controller]) {
+        return;
+    }
     
     [_controllerStreamLock lock];
     @synchronized(controller) {
@@ -353,6 +608,11 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
                 rightStickX = MAX_MAGNITUDE(rightStickX, controller.mergedWithController.lastRightStickX);
                 rightStickY = MAX_MAGNITUDE(rightStickY, controller.mergedWithController.lastRightStickY);
             }
+            
+            // Artemide Duo: shortcut buttons stay hidden from the game, sticks get the deadzone.
+            buttonFlags &= ~_duoSwallow;
+            DuoDeadzone(&leftStickX, &leftStickY, _duoDeadzone);
+            DuoDeadzone(&rightStickX, &rightStickY, _duoDeadzone);
             
             // Player 1 is always present for OSC
             LiSendMultiControllerEvent(_multiController ? controller.playerIndex : 0, [self getActiveGamepadMask],
@@ -432,6 +692,9 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
 
 -(void) initializeControllerBattery:(Controller*) controller
 {
+    if (![DuoPrefs batteryReport]) {
+        return;
+    }
     if (@available(iOS 14.0, tvOS 14.0, *)) {
         if (controller.gamepad.battery) {
             // Poll for updated battery status every 30 seconds
@@ -640,6 +903,19 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
 -(void) handleControllerTouchpad:(Controller*)controller touch:(GCControllerDirectionPad*)touch index:(int)index
 {
     controller_touch_context_t context = index == 0 ? controller.primaryTouch : controller.secondaryTouch;
+    
+    // Artemide Duo: the DualSense / DualShock touchpad moves the mouse.
+    if (index == 0 && [DuoPrefs touchpadAsMouse]) {
+        float x = touch.xAxis.value, y = touch.yAxis.value;
+        if ((context.lastX || context.lastY) && (x || y)) {
+            short dx = (short)((x - context.lastX) * 600), dy = (short)(-(y - context.lastY) * 400);
+            if (dx || dy) {
+                LiSendMouseMoveEvent(dx, dy);
+            }
+        }
+        controller.primaryTouch = (controller_touch_context_t) { x, y };
+        return;
+    }
     
     // This magic is courtesy of SDL
     float normalizedX = (1.0f + touch.xAxis.value) * 0.5f;
@@ -1083,6 +1359,7 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
     _multiController = streamConfig.multiController;
     _swapABXYButtons = streamConfig.swapABXYButtons;
     _delegate = delegate;
+    _duoDeadzone = [DuoPrefs deadzone] / 100.0f;
 
     _oscController = [[Controller alloc] init];
     _oscController.playerIndex = 0;
@@ -1233,6 +1510,19 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
 
 -(void) cleanup
 {
+    self.duoMenuKeys = nil;
+    _duoMouseMode = NO;
+    [_duoMouseTimer invalidate];
+    _duoMouseTimer = nil;
+    [_duoGyroTimer invalidate];
+    [_duoAccelTimer invalidate];
+    [_duoRumbleTimer invalidate];
+    _duoGyroTimer = nil;
+    _duoAccelTimer = nil;
+    _duoRumbleTimer = nil;
+    [_duoMotion stopGyroUpdates];
+    [_duoMotion stopAccelerometerUpdates];
+
     [[NSNotificationCenter defaultCenter] removeObserver:_controllerConnectObserver];
     [[NSNotificationCenter defaultCenter] removeObserver:_controllerDisconnectObserver];
     [[NSNotificationCenter defaultCenter] removeObserver:_mouseConnectObserver];

@@ -15,6 +15,10 @@
 #import "HttpManager.h"
 #import "DuoSupport.h"
 #import "DuoConnectOverlay.h"
+#import "DuoStreamMenu.h"
+#import "DuoPad.h"
+
+@import AVKit;
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -33,6 +37,15 @@
 - (id)initWithRefreshRate:(float)arg1 videoDynamicRange:(int)arg2;
 @end
 
+static NSString* sDuoSessionSummary;
+static NSString* sDuoLastClip;
+UIInterfaceOrientationMask DuoStreamOrientationMask = 0;
+
+#if !TARGET_OS_TV
+@interface StreamFrameViewController () <DuoStreamMenuDelegate, AVPictureInPictureSampleBufferPlaybackDelegate, AVPictureInPictureControllerDelegate>
+@end
+#endif
+
 @implementation StreamFrameViewController {
     ControllerSupport *_controllerSupport;
     StreamManager *_streamMan;
@@ -48,6 +61,13 @@
     UIActivityIndicatorView *_spinner;
     DuoConnectOverlay *_duoConnect;
     BOOL _duoClipboardPulled;
+    DuoStreamMenu *_duoMenu;
+    BOOL _duoStarted;
+    BOOL _duoLeaving;
+    NSTimer *_duoStatsTimer;
+    long long _duoPeakMbps;
+    AVPictureInPictureController *_duoPip API_AVAILABLE(ios(15.0));
+    BOOL _duoPipActive;
     StreamView *_streamView;
     UIScrollView *_scrollView;
     BOOL _userIsInteracting;
@@ -225,8 +245,243 @@
                                                       host:self.duoHostName
                                                      cover:self.duoCover];
     [self.view addSubview:_duoConnect];
+    
+    // In-stream menu: floating button (optional) + quick menu (LB+RB+B, edge swipe with "ask").
+    _duoMenu = [[DuoStreamMenu alloc] initWithFrame:self.view.bounds showButton:[DuoPrefs floatingButton]];
+    _duoMenu.delegate = self;
+    __weak StreamFrameViewController* weakSelf = self;
+    _duoMenu.onOpenChange = ^(BOOL open) {
+        StreamFrameViewController* s = weakSelf;
+        if (s == nil) {
+            return;
+        }
+        __weak DuoStreamMenu* m = s->_duoMenu;
+        if (open) {
+            s->_controllerSupport.duoMenuKeys = ^(NSInteger k) {
+                [m duoPadKey:(DuoPadKey)k];
+            };
+        } else {
+            s->_controllerSupport.duoMenuKeys = nil;
+        }
+    };
+    _duoMenu.hidden = YES;
+    [self.view addSubview:_duoMenu];
+    
+    // Portrait streams stay portrait, landscape ones landscape.
+    DuoStreamOrientationMask = self.streamConfig.height > self.streamConfig.width
+        ? UIInterfaceOrientationMaskPortrait : UIInterfaceOrientationMaskLandscape;
 #endif
 }
+
++ (NSString*)duoTakeSessionSummary {
+    NSString* s = sDuoSessionSummary;
+    sDuoSessionSummary = nil;
+    return s;
+}
+
+#if !TARGET_OS_TV
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    if (![DuoPrefs autoOrientation] || DuoStreamOrientationMask == 0) {
+        return UIInterfaceOrientationMaskLandscape;
+    }
+    return DuoStreamOrientationMask;
+}
+
+#pragma mark - Artemide Duo stream menu
+
+- (void)duoMenuKeyboard {
+    [_streamView toggleKeyboard];
+}
+
+- (BOOL)duoMenuPerfOn {
+    return _duoStatsTimer != nil || _statsUpdateTimer != nil;
+}
+
+- (void)duoMenuTogglePerf {
+    if ([self duoMenuPerfOn]) {
+        [_duoStatsTimer invalidate];
+        _duoStatsTimer = nil;
+        [_statsUpdateTimer invalidate];
+        _statsUpdateTimer = nil;
+        _overlayView.hidden = YES;
+    } else {
+        [self duoStartStats];
+    }
+}
+
+- (BOOL)duoMenuMouseAvailable {
+    return [DuoPrefs gamepadMouse] && [DuoPad shared].hasGamepad;
+}
+
+- (BOOL)duoMenuMouseOn {
+    return _controllerSupport.duoMouseMode;
+}
+
+- (void)duoMenuToggleMouse {
+    _controllerSupport.duoMouseMode = !_controllerSupport.duoMouseMode;
+    DuoToast(self.view, _controllerSupport.duoMouseMode
+             ? @"Controller as mouse · left stick moves, A click, B right click, X Windows key, Y Alt+Tab"
+             : @"Controller back in gamepad mode");
+}
+
+- (void)duoMenuDisconnect {
+    [self returnToMainFrame];
+}
+
+- (void)duoMenuQuit {
+    // Quit the app on the PC, then leave.
+    HttpManager* hMan = [self duoHttpManager];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        HttpResponse* quitResponse = [[HttpResponse alloc] init];
+        [hMan executeRequestSynchronously:[HttpRequest requestForResponse:quitResponse withUrlRequest:[hMan newQuitAppRequest]]];
+    });
+    [self returnToMainFrame];
+}
+
+- (void)duoShortcut:(NSString*)action {
+    if ([action isEqualToString:@"quit"]) {
+        [self duoMenuQuit];
+    } else if ([action isEqualToString:@"pause"]) {
+        [self duoMenuDisconnect];
+    } else if ([action isEqualToString:@"perf"]) {
+        [self duoMenuTogglePerf];
+    } else if ([action isEqualToString:@"menu"]) {
+        if (_duoMenu.menuOpen) {
+            [_duoMenu closeMenu];
+        } else {
+            [_duoMenu openMenu];
+        }
+    } else if ([action isEqualToString:@"keyboard"]) {
+        [self duoMenuKeyboard];
+    } else if ([action isEqualToString:@"mouse"]) {
+        if ([DuoPrefs gamepadMouse]) {
+            [self duoMenuToggleMouse];
+        }
+    }
+}
+
+#pragma mark - Artemide Duo performance overlay
+
+- (void)duoStartStats {
+    [_statsUpdateTimer invalidate];
+    _statsUpdateTimer = nil;
+    [_duoStatsTimer invalidate];
+    if ([[DuoPrefs overlayStyle] isEqualToString:@"classic"]) {
+        _statsUpdateTimer = [NSTimer scheduledTimerWithTimeInterval:1.0f target:self selector:@selector(updateStatsOverlay) userInfo:nil repeats:YES];
+        _duoStatsTimer = nil;
+        return;
+    }
+    __weak StreamFrameViewController* weakSelf = self;
+    _duoStatsTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer* t) {
+        [weakSelf duoUpdateStats];
+    }];
+}
+
+- (void)duoUpdateStats {
+    NSDictionary* st = [_streamMan duoStats];
+    if (st == nil) {
+        return;
+    }
+    BOOL detailed = [[DuoPrefs overlayStyle] isEqualToString:@"detailed"];
+    CGFloat d = [DuoTheme scale];
+    UIFont* b = [DuoTheme digits:11 * d weight:UIFontWeightSemibold];
+    UIFont* r = [DuoTheme digits:11 * d weight:UIFontWeightRegular];
+    UIColor* dim = [DuoTheme hex:0xC8C8C8];
+    UIColor* bright = [UIColor whiteColor];
+    NSMutableAttributedString* t = [[NSMutableAttributedString alloc] init];
+    void (^add)(NSString*, BOOL) = ^(NSString* s, BOOL strong) {
+        [t appendAttributedString:[[NSAttributedString alloc] initWithString:s attributes:@{
+            NSFontAttributeName: strong ? b : r, NSForegroundColorAttributeName: strong ? bright : dim}]];
+    };
+    float mbps = [st[@"mbps"] floatValue];
+    _duoPeakMbps = MAX(_duoPeakMbps, (long long)(mbps * 10));
+    add([NSString stringWithFormat:@"%@×%@ · %@ · %.1f FPS", st[@"width"], st[@"height"], st[@"codec"], [st[@"fps"] floatValue]], YES);
+    add(@"
+", NO);
+    add([NSString stringWithFormat:@"Bitrate %.1f Mbps", mbps], YES);
+    add([NSString stringWithFormat:@" (%.1f MB/s) · peak %.1f", mbps / 8, _duoPeakMbps / 10.0], NO);
+    add(@"
+", NO);
+    float net = [st[@"rtt"] floatValue], host = [st[@"hostAvg"] floatValue];
+    add(@"Total ", NO);
+    add([NSString stringWithFormat:@"≈ %.1f ms", net + host], YES);
+    add(@" · net ", NO);
+    add([NSString stringWithFormat:@"%.0f ms", net], YES);
+    add([NSString stringWithFormat:@" ±%@ · dropped ", st[@"rttVar"]], NO);
+    add([NSString stringWithFormat:@"%.2f%%", [st[@"loss"] floatValue]], YES);
+    if ((detailed || [DuoPrefs overlayHostStats]) && [st[@"hasHost"] boolValue]) {
+        add(@"
+Host  ", NO);
+        add([NSString stringWithFormat:@"%.1f / %.1f / ", [st[@"hostMin"] floatValue], [st[@"hostMax"] floatValue]], NO);
+        add([NSString stringWithFormat:@"%.1f ms", host], YES);
+    }
+    [self duoShowOverlay:t];
+}
+
+- (void)duoShowOverlay:(NSAttributedString*)text {
+    [self updateOverlayText:@" "];
+    _overlayView.attributedText = text;
+    _overlayView.textAlignment = NSTextAlignmentLeft;
+    _overlayView.backgroundColor = [UIColor colorWithWhite:0 alpha:[DuoPrefs overlayOpacity] / 100.0];
+    CGSize fit = [_overlayView sizeThatFits:CGSizeMake(MIN(self.view.bounds.size.width - 32, 560), CGFLOAT_MAX)];
+    _overlayView.bounds = CGRectMake(0, 0, MIN(ceil(fit.width), self.view.bounds.size.width - 32), ceil(fit.height));
+    CGFloat h = _overlayView.bounds.size.height;
+    CGFloat y = [DuoPrefs overlayBottom]
+        ? self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 10 - h / 2
+        : self.view.safeAreaInsets.top + 10 + h / 2;
+    _overlayView.center = CGPointMake(self.view.bounds.size.width / 2, y);
+    _overlayView.hidden = NO;
+}
+
+#pragma mark - Artemide Duo picture in picture
+
+- (void)duoSetupPip {
+    if (@available(iOS 15.0, *)) {
+        if (![DuoPrefs pictureInPicture] || _duoPip != nil || ![AVPictureInPictureController isPictureInPictureSupported]) {
+            return;
+        }
+        AVSampleBufferDisplayLayer* layer = [[_streamMan duoRenderer] duoDisplayLayer];
+        if (layer == nil) {
+            return;
+        }
+        AVPictureInPictureControllerContentSource* src = [[AVPictureInPictureControllerContentSource alloc] initWithSampleBufferDisplayLayer:layer playbackDelegate:self];
+        _duoPip = [[AVPictureInPictureController alloc] initWithContentSource:src];
+        _duoPip.delegate = self;
+        _duoPip.canStartPictureInPictureAutomaticallyFromInline = YES;
+        _duoPip.requiresLinearPlayback = YES;
+    }
+}
+
+- (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController setPlaying:(BOOL)playing API_AVAILABLE(ios(15.0)) {
+}
+
+- (CMTimeRange)pictureInPictureControllerTimeRangeForPlayback:(AVPictureInPictureController *)pictureInPictureController API_AVAILABLE(ios(15.0)) {
+    return CMTimeRangeMake(kCMTimeNegativeInfinity, kCMTimePositiveInfinity);
+}
+
+- (BOOL)pictureInPictureControllerIsPlaybackPaused:(AVPictureInPictureController *)pictureInPictureController API_AVAILABLE(ios(15.0)) {
+    return NO;
+}
+
+- (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController didTransitionToRenderSize:(CMVideoDimensions)newRenderSize API_AVAILABLE(ios(15.0)) {
+}
+
+- (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController skipByInterval:(CMTime)skipInterval completionHandler:(void (^)(void))completionHandler API_AVAILABLE(ios(15.0)) {
+    completionHandler();
+}
+
+- (void)pictureInPictureControllerDidStartPictureInPicture:(AVPictureInPictureController *)pictureInPictureController API_AVAILABLE(ios(15.0)) {
+    _duoPipActive = YES;
+}
+
+- (void)pictureInPictureControllerDidStopPictureInPicture:(AVPictureInPictureController *)pictureInPictureController API_AVAILABLE(ios(15.0)) {
+    _duoPipActive = NO;
+    if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+        // Closed the small window while away: end like Moonlight does when backgrounded.
+        [self returnToMainFrame];
+    }
+}
+#endif
 
 #pragma mark - Artemide Duo clipboard sync
 
@@ -240,9 +495,18 @@
         return;
     }
     NSString* text = [UIPasteboard generalPasteboard].string;
+    if (text.length == 0 || [text isEqualToString:sDuoLastClip]) {
+        return;
+    }
+    sDuoLastClip = text;
     HttpManager* hMan = [self duoHttpManager];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        [hMan sendClipboardText:text];
+        if ([hMan sendClipboardText:text] && [DuoPrefs clipboardToast]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                DuoToast([UIApplication sharedApplication].windows.firstObject, [DuoPrefs hideClipboardContent]
+                         ? @"Clipboard sent to the PC" : [NSString stringWithFormat:@"Clipboard sent to the PC: %@", [text substringToIndex:MIN(text.length, 60)]]);
+            });
+        }
     });
 #endif
 }
@@ -258,8 +522,13 @@
         NSString* text = [hMan fetchClipboardText];
         if (text.length > 0) {
             dispatch_async(dispatch_get_main_queue(), ^{
+                sDuoLastClip = text;
                 if (![[UIPasteboard generalPasteboard].string isEqualToString:text]) {
                     [UIPasteboard generalPasteboard].string = text;
+                    if ([DuoPrefs clipboardToast]) {
+                        DuoToast([UIApplication sharedApplication].windows.firstObject, [DuoPrefs hideClipboardContent]
+                                 ? @"Clipboard from the PC" : [NSString stringWithFormat:@"Clipboard from the PC: %@", [text substringToIndex:MIN(text.length, 60)]]);
+                    }
                 }
             });
         }
@@ -274,6 +543,13 @@
 - (void)willMoveToParentViewController:(UIViewController *)parent {
     // Only cleanup when we're being destroyed
     if (parent == nil) {
+#if !TARGET_OS_TV
+        [_duoConnect dismiss:NO];
+        _duoConnect = nil;
+        [_duoStatsTimer invalidate];
+        _duoStatsTimer = nil;
+        DuoStreamOrientationMask = 0;
+#endif
         [_controllerSupport cleanup];
         [UIApplication sharedApplication].idleTimerDisabled = NO;
         [_streamMan stopStream];
@@ -377,7 +653,29 @@
 }
 
 - (void) returnToMainFrame {
+    if (_duoLeaving) {
+        return;
+    }
+    _duoLeaving = YES;
     [self duoPullClipboard];
+#if !TARGET_OS_TV
+    if (_scrollView != nil && [DuoPrefs rememberZoom]) {
+        NSUserDefaults* u = [NSUserDefaults standardUserDefaults];
+        [u setDouble:_scrollView.zoomScale forKey:@"duo_zoom_scale"];
+        [u setDouble:_scrollView.contentOffset.x forKey:@"duo_zoom_x"];
+        [u setDouble:_scrollView.contentOffset.y forKey:@"duo_zoom_y"];
+    }
+    [_duoMenu closeMenu];
+    [_duoStatsTimer invalidate];
+    _duoStatsTimer = nil;
+    NSTimeInterval played = [DuoPlayStats ended];
+    if (played > 0 && [DuoPrefs postStreamToast]) {
+        long long bytes = [_streamMan duoTotalBytes];
+        sDuoSessionSummary = [NSString stringWithFormat:@"%@ · %@ · %@ received", self.streamConfig.appName ?: @"Session",
+                              [DuoPlayStats duration:played],
+                              [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleFile]];
+    }
+#endif
 
     // Reset display mode back to default
     [self updatePreferredDisplayMode:NO];
@@ -385,7 +683,8 @@
     [_statsUpdateTimer invalidate];
     _statsUpdateTimer = nil;
     
-    [self.navigationController popToRootViewControllerAnimated:YES];
+    // No slide: the Artemide Duo home fades in straight away (no old Moonlight screen in between).
+    [self.navigationController popToRootViewControllerAnimated:NO];
 }
 
 // This will fire if the user opens control center or gets a low battery message
@@ -438,6 +737,17 @@
 
 // This fires when the home button is pressed
 - (void)applicationDidEnterBackground:(UIApplication *)application {
+#if !TARGET_OS_TV
+    if (_duoPipActive || (_duoPip != nil && [DuoPrefs pictureInPicture])) {
+        // Picture in Picture keeps the stream running in a small window.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (!self->_duoPipActive && [UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+                [self returnToMainFrame];
+            }
+        });
+        return;
+    }
+#endif
     Log(LOG_I, @"Terminating stream immediately for backgrounding");
 
     if (_inactivityTimer != nil) {
@@ -451,6 +761,13 @@
 - (void)edgeSwiped {
     Log(LOG_I, @"User swiped to end stream");
     
+#if !TARGET_OS_TV
+    if ([DuoPrefs quitDialog]) {
+        _duoMenu.hidden = NO;
+        [_duoMenu openMenu];
+        return;
+    }
+#endif
     [self returnToMainFrame];
 }
 
@@ -469,12 +786,23 @@
         [self->_controllerSupport connectionEstablished];
         
         if (self->_settings.statsOverlay) {
+#if TARGET_OS_TV
             self->_statsUpdateTimer = [NSTimer scheduledTimerWithTimeInterval:1.0f
                                                                        target:self
                                                                      selector:@selector(updateStatsOverlay)
                                                                      userInfo:nil
                                                                       repeats:YES];
+#else
+            [self duoStartStats];
+#endif
         }
+#if !TARGET_OS_TV
+        if (!self->_duoStarted) {
+            self->_duoStarted = YES;
+            [DuoPlayStats startedOnHost:self.duoHostUuid ?: @"" app:self.streamConfig.appID name:self.streamConfig.appName];
+        }
+        self->_duoMenu.hidden = NO;
+#endif
     });
 }
 
@@ -650,6 +978,12 @@
 
 - (void)connectionStatusUpdate:(int)status {
     Log(LOG_W, @"Connection status update: %d", status);
+    
+#if !TARGET_OS_TV
+    if ([DuoPrefs disableWarnings] || _duoStatsTimer != nil) {
+        return;
+    }
+#endif
 
     // The stats overlay takes precedence over these warnings
     if (_statsUpdateTimer != nil) {
@@ -713,8 +1047,20 @@
 - (void) videoContentShown {
     [_spinner stopAnimating];
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self->_duoConnect dismiss];
+        if (self->_duoConnect == nil) {
+            return;  // later IDR frames
+        }
+        [self->_duoConnect dismiss:YES];
         self->_duoConnect = nil;
+        [self duoSetupPip];
+        if (self->_scrollView != nil && [DuoPrefs rememberZoom]) {
+            NSUserDefaults* u = [NSUserDefaults standardUserDefaults];
+            double z = [u doubleForKey:@"duo_zoom_scale"];
+            if (z > 1.01) {
+                self->_scrollView.zoomScale = z;
+                self->_scrollView.contentOffset = CGPointMake([u doubleForKey:@"duo_zoom_x"], [u doubleForKey:@"duo_zoom_y"]);
+            }
+        }
     });
     [self.view setBackgroundColor:[UIColor blackColor]];
 }

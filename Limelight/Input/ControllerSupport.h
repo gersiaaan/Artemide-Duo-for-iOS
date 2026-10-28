@@ -17,6 +17,10 @@
 - (void) mousePresenceChanged;
 - (void) streamExitRequested;
 
+@optional
+/// Artemide Duo: a LB + RB + button shortcut fired (quit, pause, perf, menu, keyboard, mouse).
+- (void) duoShortcut:(NSString*)action;
+
 @end
 
 @interface ControllerSupport : NSObject
@@ -49,5 +53,11 @@
 +(int) getConnectedGamepadMask:(StreamConfiguration*)streamConfig;
 
 -(NSUInteger) getConnectedGamepadCount;
+
+// Artemide Duo
+/// While set, controller buttons drive this menu instead of the game (keys are DuoPadKey values).
+@property (nonatomic, copy) void (^ _Nullable duoMenuKeys)(NSInteger key);
+/// Controller as mouse: left stick = mouse, right stick = scroll, A/B = clicks, X = Windows key, Y = Alt+Tab.
+@property (nonatomic) BOOL duoMouseMode;
 
 @end

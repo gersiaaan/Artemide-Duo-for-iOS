@@ -17,4 +17,10 @@
 
 - (NSString*) getStatsOverlayText;
 
+// Artemide Duo
+/// Numbers for the new overlay: width, height, codec, fps, mbps, rtt, rttVar, lossPct, hostMin/Max/Avg (ms).
+- (NSDictionary*) duoStats;
+- (long long) duoTotalBytes;
+- (VideoDecoderRenderer*) duoRenderer;
+
 @end

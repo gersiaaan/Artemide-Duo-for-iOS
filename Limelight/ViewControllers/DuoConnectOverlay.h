@@ -2,8 +2,9 @@
 //  DuoConnectOverlay.h
 //  Artemide Duo for iOS
 //
-//  The Artemide Duo stream-start screen: cover, name, connection stage and a progress bar.
-//  It fades out as soon as the first video frame is on screen.
+//  Stream start screen (port of the Android DuoConnectOverlay): the app's cover pops in over
+//  the waves with a pulsing accent glow, "Connecting to <PC>" and the current stage. When the
+//  stream is up the cover zooms through the screen and the overlay dissolves into the video.
 //
 
 #import <UIKit/UIKit.h>
@@ -12,12 +13,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface DuoConnectOverlay : UIView
 - (instancetype)initWithFrame:(CGRect)frame app:(NSString*)app host:(nullable NSString*)host cover:(nullable UIImage*)cover;
-/// One connection stage started (moonlight-common-c stage names).
+/// One connection stage started (moonlight-common-c stage name).
 - (void)stageStarting:(NSString*)stage;
-/// The connection is up; video follows.
 - (void)connected;
-/// First frame is on screen: zoom into the stream and remove the overlay.
-- (void)dismiss;
+/// connected = fill to 100 %, then the cover glides towards you and dissolves into the stream.
+- (void)dismiss:(BOOL)connected;
 @end
 
 NS_ASSUME_NONNULL_END

@@ -20,6 +20,8 @@
 - (void)start;
 - (void)stop;
 - (void)setHdrMode:(BOOL)enabled;
+/// Artemide Duo: the layer the video is drawn into (Picture in Picture).
+- (AVSampleBufferDisplayLayer*)duoDisplayLayer;
 
 - (int)submitDecodeBuffer:(unsigned char *)data length:(int)length bufferType:(int)bufferType decodeUnit:(PDECODE_UNIT)du;
 

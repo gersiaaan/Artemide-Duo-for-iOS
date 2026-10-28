@@ -7,6 +7,7 @@
 //
 
 #import "VideoDecoderRenderer.h"
+#import "DuoSupport.h"
 #import "StreamView.h"
 
 #include <libavcodec/avcodec.h>
@@ -49,12 +50,9 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     // respects the PAR encoded in the SPS which causes our computed video-relative
     // touch location to be wrong in StreamView if the aspect ratio of the host
     // desktop doesn't match the aspect ratio of the stream.
-    CGSize videoSize;
-    if (_view.bounds.size.width > _view.bounds.size.height * _streamAspectRatio) {
-        videoSize = CGSizeMake(_view.bounds.size.height * _streamAspectRatio, _view.bounds.size.height);
-    } else {
-        videoSize = CGSizeMake(_view.bounds.size.width, _view.bounds.size.width / _streamAspectRatio);
-    }
+    // Artemide Duo: fit / fill / stretch (StreamView maps touches with the same size).
+    CGSize videoSize = [DuoPrefs videoSizeIn:_view.bounds.size aspect:_streamAspectRatio];
+    _view.clipsToBounds = YES;
     displayLayer.position = CGPointMake(CGRectGetMidX(_view.bounds), CGRectGetMidY(_view.bounds));
     displayLayer.bounds = CGRectMake(0, 0, videoSize.width, videoSize.height);
     displayLayer.videoGravity = AVLayerVideoGravityResize;
@@ -91,6 +89,11 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     [self reinitializeDisplayLayer];
     
     return self;
+}
+
+- (AVSampleBufferDisplayLayer*)duoDisplayLayer
+{
+    return displayLayer;
 }
 
 - (void)setupWithVideoFormat:(int)videoFormat width:(int)videoWidth height:(int)videoHeight frameRate:(int)frameRate

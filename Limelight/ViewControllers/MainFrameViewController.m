@@ -27,6 +27,9 @@
 #import "IdManager.h"
 #import "ConnectionHelper.h"
 #import "DuoHomeView.h"
+#import "DuoAppsView.h"
+#import "DuoSettingsViewController.h"
+#import "DuoPad.h"
 #import "DuoSupport.h"
 
 #if !TARGET_OS_TV
@@ -40,7 +43,7 @@
 #include <Limelight.h>
 
 #if !TARGET_OS_TV
-@interface MainFrameViewController () <DuoHomeDelegate>
+@interface MainFrameViewController () <DuoHomeDelegate, DuoAppsDelegate>
 @end
 #endif
 
@@ -62,7 +65,10 @@
     bool _background;
 #if !TARGET_OS_TV
     DuoHomeView* _duoHome;
+    DuoAppsView* _duoApps;
+    UIView* _duoRoot;
     TemporaryApp* _duoStreamApp;
+    BOOL _duoShowingApps;
 #endif
 #if TARGET_OS_TV
     UITapGestureRecognizer* _menuRecognizer;
@@ -316,7 +322,7 @@ static NSMutableSet* hostList;
     [self.collectionView reloadData];
     [self.view addSubview:hostScrollView];
 #if !TARGET_OS_TV
-    [_duoHome showHostPage];
+    [self duoShowPage:NO];
 #endif
 }
 
@@ -329,6 +335,7 @@ static NSMutableSet* hostList;
         [self.collectionView reloadData];
 #if !TARGET_OS_TV
         [self->_duoHome refresh];
+        [self->_duoApps refresh];
 #endif
     });
 }
@@ -633,6 +640,12 @@ static NSMutableSet* hostList;
     TemporarySettings* streamSettings = [dataMan getSettings];
     
     _streamConfig.frameRate = [streamSettings.framerate intValue];
+#if !TARGET_OS_TV
+    // Artemide Duo: custom refresh rate (e.g. 90 Hz) instead of 30/60/120.
+    if ([DuoPrefs customFps] > 0) {
+        _streamConfig.frameRate = (int)[DuoPrefs customFps];
+    }
+#endif
     if (@available(iOS 10.3, *)) {
         // Don't stream more FPS than the display can show
         if (_streamConfig.frameRate > [UIScreen mainScreen].maximumFramesPerSecond) {
@@ -655,6 +668,23 @@ static NSMutableSet* hostList;
 #endif
     
     _streamConfig.bitRate = [streamSettings.bitrate intValue];
+#if !TARGET_OS_TV
+    // Artemide Duo: own bitrate on mobile data.
+    if ([DuoPrefs mobileBitrate] > 0 && [DuoPrefs onCellular]) {
+        _streamConfig.bitRate = (int)[DuoPrefs mobileBitrate];
+    }
+    // Portrait streaming: held upright, the resolution is turned.
+    if ([DuoPrefs autoOrientation]) {
+        UIWindowScene* scene = (UIWindowScene*)self.view.window.windowScene;
+        BOOL portrait = scene != nil && UIInterfaceOrientationIsPortrait(scene.interfaceOrientation);
+        BOOL tall = _streamConfig.height > _streamConfig.width;
+        if (portrait != tall) {
+            int w = _streamConfig.width;
+            _streamConfig.width = _streamConfig.height;
+            _streamConfig.height = w;
+        }
+    }
+#endif
     _streamConfig.optimizeGameSettings = streamSettings.optimizeGames;
     _streamConfig.playAudioOnPC = streamSettings.playAudioOnPC;
     _streamConfig.useFramePacing = streamSettings.useFramePacing;
@@ -896,6 +926,7 @@ static NSMutableSet* hostList;
     if (position == FrontViewPositionLeft) {
         [(SettingsViewController*)[revealController rearViewController] saveSettings];
         [_duoHome refresh];
+        [_duoApps refresh];
     }
     
     currentPosition = position;
@@ -910,12 +941,17 @@ static NSMutableSet* hostList;
 
 - (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender {
     if ([segue.destinationViewController isKindOfClass:[StreamFrameViewController class]]) {
+#if !TARGET_OS_TV
+        // The stream installs its own controller handlers.
+        [[DuoPad shared] detach];
+#endif
         StreamFrameViewController* streamFrame = segue.destinationViewController;
         streamFrame.streamConfig = _streamConfig;
 #if !TARGET_OS_TV
         if (_duoStreamApp != nil) {
             streamFrame.duoCover = [_boxArtCache objectForKey:_duoStreamApp];
             streamFrame.duoHostName = _duoStreamApp.host.name;
+            streamFrame.duoHostUuid = _duoStreamApp.host.uuid;
         }
 #endif
     }
@@ -1027,19 +1063,47 @@ static NSMutableSet* hostList;
 #if !TARGET_OS_TV
     // Artemide Duo: our own host page and app list on top of Moonlight's screen.
     UIView* duoParent = self.navigationController.view ?: self.view;
-    _duoHome = [[DuoHomeView alloc] initWithFrame:duoParent.bounds];
+    _duoRoot = [[UIView alloc] initWithFrame:duoParent.bounds];
+    _duoRoot.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _duoRoot.backgroundColor = [DuoTheme floor];
+    [duoParent addSubview:_duoRoot];
+    _duoApps = [[DuoAppsView alloc] initWithFrame:_duoRoot.bounds];
+    _duoApps.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _duoApps.delegate = self;
+    _duoApps.hidden = YES;
+    [_duoRoot addSubview:_duoApps];
+    _duoHome = [[DuoHomeView alloc] initWithFrame:_duoRoot.bounds];
     _duoHome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _duoHome.delegate = self;
-    [duoParent addSubview:_duoHome];
-    [_duoHome addGestureRecognizer:self.revealViewController.tapGestureRecognizer];
+    [_duoRoot addSubview:_duoHome];
     @synchronized (hostList) {
         [_duoHome setHosts:[hostList allObjects]];
     }
+    // Moonlight's own grid and host row stay hidden underneath.
+    self.collectionView.hidden = YES;
+    self.collectionView.backgroundColor = [DuoTheme floor];
+    hostScrollView.hidden = YES;
+    self.view.backgroundColor = [DuoTheme floor];
+    _loadingFrame.modalPresentationStyle = UIModalPresentationOverFullScreen;
+    _loadingFrame.view.backgroundColor = [[DuoTheme floor] colorWithAlphaComponent:0.55];
+    for (UIView* v in _loadingFrame.view.subviews) {
+        if ([v isKindOfClass:[UIActivityIndicatorView class]]) {
+            ((UIActivityIndicatorView*)v).color = [DuoTheme accent];
+        }
+    }
+    [[DuoPad shared] push:_duoHome];
+    [[DuoPad shared] attach];
 #endif
         
+#if TARGET_OS_TV
     if ([hostList count] == 1) {
         [self hostClicked:[hostList anyObject] view:nil];
     }
+#else
+    // Artemide Duo always starts on its host page (like Android).
+    if (NO) {
+    }
+#endif
     else {
         [self updateTitle];
         [self.view addSubview:hostScrollView];
@@ -1144,8 +1208,12 @@ static NSMutableSet* hostList;
     [self.navigationController setNavigationBarHidden:NO animated:YES];
 #else
     [self.navigationController setNavigationBarHidden:YES animated:NO];
-    _duoHome.hidden = NO;
-    [_duoHome.superview bringSubviewToFront:_duoHome];
+    [_duoRoot.superview bringSubviewToFront:_duoRoot];
+    [[DuoPad shared] attach];
+    NSString* summary = [StreamFrameViewController duoTakeSessionSummary];
+    if (summary != nil) {
+        DuoToast(_duoRoot, summary);
+    }
 #endif
     
     // Hide 1px border line
@@ -1170,6 +1238,20 @@ static NSMutableSet* hostList;
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+#if !TARGET_OS_TV
+    // Back from a stream: our screens fade in at once (no Moonlight screen in between).
+    [self.navigationController setNavigationBarHidden:YES animated:NO];
+    if (_duoRoot.hidden) {
+        _duoRoot.hidden = NO;
+        _duoRoot.alpha = 0;
+        [DuoMotion ease:0.35 delay:0 animations:^{
+            self->_duoRoot.alpha = 1;
+        } completion:nil];
+    }
+    [_duoRoot.superview bringSubviewToFront:_duoRoot];
+    [_duoHome refresh];
+    [_duoApps refresh];
+#endif
     
     // We can get here on home press while streaming
     // since the stream view segues to us just before
@@ -1190,7 +1272,9 @@ static NSMutableSet* hostList;
 {
     [super viewWillDisappear:animated];
     // The overlay lives on the navigation controller's view, so hide it while streaming.
-    _duoHome.hidden = YES;
+    if (self.presentedViewController == nil) {
+        _duoRoot.hidden = YES;
+    }
 }
 
 - (UIStatusBarStyle)preferredStatusBarStyle {
@@ -1206,8 +1290,10 @@ static NSMutableSet* hostList;
     // you cannot restart an NSOperation when it is finished
     [_discMan stopDiscovery];
     
-    // Purge the box art cache
-    [_boxArtCache removeAllObjects];
+    // Purge the box art cache (not while only our settings are in front)
+    if (self.presentedViewController == nil) {
+        [_boxArtCache removeAllObjects];
+    }
     
     // Remove our lifetime observers to avoid triggering them
     // while streaming
@@ -1407,7 +1493,8 @@ static NSMutableSet* hostList;
     [hostScrollView removeFromSuperview];
     [self.collectionView reloadData];
 #if !TARGET_OS_TV
-    [_duoHome showApps:_sortedAppList host:host cache:_boxArtCache];
+    [_duoApps showApps:_sortedAppList host:host cache:_boxArtCache];
+    [self duoShowPage:YES];
 #endif
 }
 
@@ -1508,6 +1595,34 @@ static NSMutableSet* hostList;
 #if !TARGET_OS_TV
 #pragma mark - Artemide Duo home
 
+- (void)duoShowPage:(BOOL)apps {
+    if (apps == _duoShowingApps) {
+        return;
+    }
+    _duoShowingApps = apps;
+    UIView* inV = apps ? (UIView*)_duoApps : (UIView*)_duoHome;
+    UIView* outV = apps ? (UIView*)_duoHome : (UIView*)_duoApps;
+    [[DuoPad shared] remove:(id<DuoPadTarget>)outV];
+    [[DuoPad shared] push:(id<DuoPadTarget>)inV];
+    inV.hidden = NO;
+    inV.alpha = 0;
+    inV.transform = CGAffineTransformMakeTranslation((apps ? 30 : -30) * [DuoTheme scale], 0);
+    [_duoRoot bringSubviewToFront:inV];
+    [DuoMotion ease:0.36 delay:0 animations:^{
+        inV.alpha = 1;
+        inV.transform = CGAffineTransformIdentity;
+        outV.alpha = 0;
+    } completion:^{
+        if (self->_duoShowingApps == apps) {
+            outV.hidden = YES;
+            outV.alpha = 1;
+        }
+    }];
+    if (!apps) {
+        [_duoHome refresh];
+    }
+}
+
 - (void)duoOpenHost:(TemporaryHost*)host view:(UIView*)view {
     [self hostClicked:host view:view];
 }
@@ -1516,11 +1631,69 @@ static NSMutableSet* hostList;
     [self hostLongClicked:host view:view];
 }
 
+- (void)duoWakeHost:(TemporaryHost*)host {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [WakeOnLanManager wakeHost:host];
+    });
+    DuoToast(_duoRoot, [NSString stringWithFormat:@"Wake-up sent to %@", host.name]);
+}
+
 - (void)duoAddHost {
     [self addHostClicked];
 }
 
-- (void)duoOpenApp:(TemporaryApp*)app view:(UIView*)view {
+- (void)duoRefreshHosts {
+    [_discMan resetDiscoveryState];
+    [_discMan startDiscovery];
+}
+
+- (UIImage*)duoCoverForHost:(TemporaryHost*)host appId:(NSString*)appId {
+    for (TemporaryApp* a in host.appList) {
+        if ([a.id isEqualToString:appId]) {
+            UIImage* img = [_boxArtCache objectForKey:a];
+            if (img == nil) {
+                img = [MainFrameViewController loadBoxArtForCaching:a];
+                if (img != nil) {
+                    [_boxArtCache setObject:img forKey:a];
+                }
+            }
+            return img;
+        }
+    }
+    return nil;
+}
+
+- (void)duoPlayAgain:(TemporaryHost*)host appId:(NSString*)appId {
+    for (TemporaryApp* a in host.appList) {
+        if ([a.id isEqualToString:appId]) {
+            if (a.host == nil) {
+                a.host = host;
+            }
+            [self duoStartApp:a view:_duoHome];
+            return;
+        }
+    }
+    // Not in the cached list: open the host.
+    [self hostClicked:host view:_duoHome];
+}
+
+- (void)duoStartApp:(TemporaryApp*)app view:(UIView*)view {
+    TemporaryApp* running = [self findRunningApp:app.host];
+    if (running != nil && [DuoPrefs resumeWithoutConfirm]) {
+        [_appManager stopRetrieving];
+        if ([running.id isEqualToString:app.id]) {
+            // Same app: just resume.
+            [self prepareToStreamApp:running];
+            [self performSegueWithIdentifier:@"createStreamFrame" sender:nil];
+        } else {
+            // Another app runs: end it, then start this one (no questions asked).
+            [self duoQuitHost:app.host then:^{
+                [self prepareToStreamApp:app];
+                [self performSegueWithIdentifier:@"createStreamFrame" sender:nil];
+            }];
+        }
+        return;
+    }
     [self appClicked:app view:view];
 }
 
@@ -1529,11 +1702,73 @@ static NSMutableSet* hostList;
 }
 
 - (void)duoOpenSettings {
-    [self.revealViewController revealToggleAnimated:YES];
+    DuoSettingsViewController* s = [[DuoSettingsViewController alloc] init];
+    s.modalPresentationStyle = UIModalPresentationFullScreen;
+    s.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+    __weak MainFrameViewController* weakSelf = self;
+    s.onClose = ^{
+        [weakSelf duoRebuildScreens];
+    };
+    [self presentViewController:s animated:YES completion:nil];
+}
+
+/// After settings: rebuild so a new accent colour etc. apply everywhere.
+- (void)duoRebuildScreens {
+    [[DuoPad shared] remove:_duoHome];
+    [[DuoPad shared] remove:_duoApps];
+    BOOL apps = _duoShowingApps;
+    [_duoHome removeFromSuperview];
+    [_duoApps removeFromSuperview];
+    _duoApps = [[DuoAppsView alloc] initWithFrame:_duoRoot.bounds];
+    _duoApps.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _duoApps.delegate = self;
+    [_duoRoot addSubview:_duoApps];
+    _duoHome = [[DuoHomeView alloc] initWithFrame:_duoRoot.bounds];
+    _duoHome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _duoHome.delegate = self;
+    [_duoRoot addSubview:_duoHome];
+    @synchronized (hostList) {
+        [_duoHome setHosts:[hostList allObjects]];
+    }
+    if (apps && _selectedHost != nil) {
+        [_duoApps showApps:_sortedAppList ?: @[] host:_selectedHost cache:_boxArtCache];
+        _duoHome.hidden = YES;
+        [_duoRoot bringSubviewToFront:_duoApps];
+        [[DuoPad shared] push:_duoApps];
+    } else {
+        _duoApps.hidden = YES;
+        [[DuoPad shared] push:_duoHome];
+    }
+    [[DuoPad shared] attach];
 }
 
 - (void)duoBackToHosts {
     [self showHostSelectionView];
+}
+
+/// Ends whatever runs on the host, then calls `then` if it worked.
+- (void)duoQuitHost:(TemporaryHost*)host then:(void (^)(void))then {
+    [self showLoadingFrame:^{
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            HttpManager* hMan = [[HttpManager alloc] initWithHost:host];
+            HttpResponse* quitResponse = [[HttpResponse alloc] init];
+            [self->_discMan pauseDiscoveryForHost:host];
+            [hMan executeRequestSynchronously:[HttpRequest requestForResponse:quitResponse withUrlRequest:[hMan newQuitAppRequest]]];
+            if (quitResponse.statusCode == 200) {
+                host.currentGame = @"0";
+            }
+            [self->_discMan resumeDiscoveryForHost:host];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self hideLoadingFrame:^{
+                    if (quitResponse.statusCode == 200) {
+                        then();
+                    } else {
+                        DuoToast(self->_duoRoot, @"The PC did not end the running app. If another device started it, quit it there.");
+                    }
+                }];
+            });
+        });
+    }];
 }
 
 - (void)duoQuitAll:(TemporaryHost*)host {
@@ -1557,13 +1792,8 @@ static NSMutableSet* hostList;
             [self->_discMan resumeDiscoveryForHost:host];
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self hideLoadingFrame:^{
-                    if (quitResponse.statusCode != 200) {
-                        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Quit all sessions"
-                                                                                       message:@"The host did not end the session. If it was started by another device, quit it there."
-                                                                                preferredStyle:UIAlertControllerStyleAlert];
-                        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                        [[self activeViewController] presentViewController:alert animated:YES completion:nil];
-                    }
+                    DuoToast(self->_duoRoot, quitResponse.statusCode == 200 ? @"All sessions ended"
+                             : @"The PC did not end the session. If another device started it, quit it there.");
                     if (host == self->_selectedHost) {
                         [self updateAppsForHost:host];
                     }

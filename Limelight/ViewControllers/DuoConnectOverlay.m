@@ -7,205 +7,260 @@
 #import "DuoSupport.h"
 #import "DuoWavesView.h"
 
-// moonlight-common-c runs about eleven stages before the stream is up.
-static const CGFloat kStageCount = 12;
+static const NSInteger kStageCount = 11; // moonlight-common-c connection stages
 
 @implementation DuoConnectOverlay {
-    UIImageView* _backdrop;
-    UIView* _content;
+    CGFloat d;
+    UIView* _coverBox;
+    CAGradientLayer* _coverBg;
+    UIView* _glow;
     UILabel* _stage;
-    UIView* _track;
     UIView* _bar;
-    NSLayoutConstraint* _barWidth;
+    UILabel* _percent;
+    CGFloat _trackW;
+    CADisplayLink* _link;
+    BOOL _gone;
+    // Progress 0..1: shown glides towards the target; a slow creep keeps it alive
+    // while a step takes long (app launch on the PC).
+    CGFloat _shown, _target, _ceiling;
     NSInteger _stages;
-    BOOL _dismissed;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame app:(NSString*)app host:(NSString*)host cover:(UIImage*)cover {
     self = [super initWithFrame:frame];
     if (self) {
+        d = [DuoTheme scale];
+        UIColor* accent = [DuoTheme accent];
         self.backgroundColor = [DuoTheme floor];
-        self.userInteractionEnabled = NO;
         self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-
-        DuoWavesView* waves = [[DuoWavesView alloc] initWithFrame:self.bounds];
+        DuoWavesView* waves = [[DuoWavesView alloc] initWithFrame:self.bounds rise:YES];
         waves.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [self addSubview:waves];
 
-        if (cover != nil) {
-            _backdrop = [[UIImageView alloc] initWithFrame:self.bounds];
-            _backdrop.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            _backdrop.contentMode = UIViewContentModeScaleAspectFill;
-            _backdrop.clipsToBounds = YES;
-            _backdrop.image = cover;
-            _backdrop.alpha = 0.35;
-            UIVisualEffectView* blur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
-            blur.frame = _backdrop.bounds;
-            blur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            [_backdrop addSubview:blur];
-            [self addSubview:_backdrop];
-        }
+        CGFloat cw = 118 * d, ch = roundf(cw * 1.41);
+        UIView* col = [[UIView alloc] init];
+        col.translatesAutoresizingMaskIntoConstraints = NO;
+        [self addSubview:col];
 
-        _content = [[UIView alloc] init];
-        _content.translatesAutoresizingMaskIntoConstraints = NO;
-        [self addSubview:_content];
+        _glow = [[UIView alloc] init];
+        _glow.translatesAutoresizingMaskIntoConstraints = NO;
+        CAGradientLayer* g = [CAGradientLayer layer];
+        g.type = kCAGradientLayerRadial;
+        g.colors = @[(id)[accent colorWithAlphaComponent:0.55].CGColor, (id)[accent colorWithAlphaComponent:0].CGColor];
+        g.startPoint = CGPointMake(0.5, 0.5);
+        g.endPoint = CGPointMake(1, 1);
+        g.frame = CGRectMake(0, 0, cw + 70 * d, ch + 70 * d);
+        [_glow.layer addSublayer:g];
+        _glow.alpha = 0;
+        [col addSubview:_glow];
 
-        UIView* box = [[UIView alloc] init];
-        box.translatesAutoresizingMaskIntoConstraints = NO;
-        box.backgroundColor = [[DuoTheme accent] colorWithAlphaComponent:0.22];
-        box.layer.cornerRadius = 16;
-        box.layer.borderWidth = 1;
-        box.layer.borderColor = [DuoTheme line].CGColor;
-        box.clipsToBounds = YES;
-        [_content addSubview:box];
-        UIImageView* art = [[UIImageView alloc] initWithImage:cover];
-        art.translatesAutoresizingMaskIntoConstraints = NO;
-        art.contentMode = UIViewContentModeScaleAspectFill;
-        [box addSubview:art];
-        UILabel* initials = [[UILabel alloc] init];
-        initials.translatesAutoresizingMaskIntoConstraints = NO;
-        initials.text = [app uppercaseString];
-        initials.numberOfLines = 3;
-        initials.textAlignment = NSTextAlignmentCenter;
-        initials.font = [DuoTheme font:16 weight:UIFontWeightBold];
-        initials.textColor = [DuoTheme text];
-        initials.hidden = (cover != nil);
-        [box addSubview:initials];
+        _coverBox = [[UIView alloc] init];
+        _coverBox.translatesAutoresizingMaskIntoConstraints = NO;
+        _coverBox.layer.cornerRadius = 14 * d;
+        _coverBox.clipsToBounds = YES;
+        _coverBg = DuoPlaceholderLayer();
+        _coverBg.frame = CGRectMake(0, 0, cw, ch);
+        [_coverBox.layer addSublayer:_coverBg];
+        UILabel* ph = DuoText([app uppercaseString], 13, [DuoTheme text], YES);
+        ph.font = [DuoTheme bold:13];
+        ph.numberOfLines = 3;
+        ph.textAlignment = NSTextAlignmentCenter;
+        [_coverBox addSubview:ph];
+        UIImageView* iv = [[UIImageView alloc] initWithImage:cover];
+        iv.translatesAutoresizingMaskIntoConstraints = NO;
+        iv.contentMode = UIViewContentModeScaleAspectFill;
+        [_coverBox addSubview:iv];
+        [col addSubview:_coverBox];
 
-        UILabel* name = [[UILabel alloc] init];
-        name.translatesAutoresizingMaskIntoConstraints = NO;
-        name.text = app;
-        name.font = [DuoTheme font:28 weight:UIFontWeightBold];
-        name.textColor = [DuoTheme text];
+        UILabel* name = DuoText(app, 20, [DuoTheme text], YES);
         name.textAlignment = NSTextAlignmentCenter;
-        name.adjustsFontSizeToFitWidth = YES;
-        name.minimumScaleFactor = 0.6;
-        [_content addSubview:name];
-
-        UILabel* sub = [[UILabel alloc] init];
-        sub.translatesAutoresizingMaskIntoConstraints = NO;
-        sub.text = host != nil ? [NSString stringWithFormat:@"on %@", host] : @"";
-        sub.font = [DuoTheme font:15 weight:UIFontWeightRegular];
-        sub.textColor = [DuoTheme text2];
-        sub.textAlignment = NSTextAlignmentCenter;
-        [_content addSubview:sub];
-
-        _track = [[UIView alloc] init];
-        _track.translatesAutoresizingMaskIntoConstraints = NO;
-        _track.backgroundColor = [UIColor colorWithWhite:1 alpha:0.10];
-        _track.layer.cornerRadius = 2;
-        _track.clipsToBounds = YES;
-        [_content addSubview:_track];
-        _bar = [[UIView alloc] init];
-        _bar.translatesAutoresizingMaskIntoConstraints = NO;
-        _bar.backgroundColor = [DuoTheme accent];
-        _bar.layer.cornerRadius = 2;
-        [_track addSubview:_bar];
-
-        _stage = [[UILabel alloc] init];
-        _stage.translatesAutoresizingMaskIntoConstraints = NO;
-        _stage.text = @"Starting …";
-        _stage.font = [DuoTheme font:13 weight:UIFontWeightMedium];
-        _stage.textColor = [DuoTheme text2];
+        name.lineBreakMode = NSLineBreakByTruncatingTail;
+        [col addSubview:name];
+        _stage = DuoText([NSString stringWithFormat:@"Connecting to %@ …", host ?: @"your PC"], 12.5, [DuoTheme text2], NO);
         _stage.textAlignment = NSTextAlignmentCenter;
-        [_content addSubview:_stage];
+        [col addSubview:_stage];
 
-        UILabel* tip = [[UILabel alloc] init];
-        tip.translatesAutoresizingMaskIntoConstraints = NO;
-        tip.text = @"Swipe from the left edge to disconnect";
-        tip.font = [DuoTheme font:12 weight:UIFontWeightRegular];
-        tip.textColor = [DuoTheme text3];
-        tip.textAlignment = NSTextAlignmentCenter;
+        _trackW = 200 * d;
+        UIView* track = [[UIView alloc] init];
+        track.translatesAutoresizingMaskIntoConstraints = NO;
+        track.backgroundColor = [UIColor colorWithWhite:1 alpha:0x1F / 255.0];
+        track.layer.cornerRadius = 2 * d;
+        track.clipsToBounds = YES;
+        [col addSubview:track];
+        _bar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, _trackW, 3 * d)];
+        CAGradientLayer* bb = [CAGradientLayer layer];
+        bb.colors = @[(id)[accent colorWithAlphaComponent:0.55].CGColor, (id)accent.CGColor];
+        bb.startPoint = CGPointMake(0, 0.5);
+        bb.endPoint = CGPointMake(1, 0.5);
+        bb.frame = _bar.bounds;
+        [_bar.layer addSublayer:bb];
+        _bar.layer.anchorPoint = CGPointMake(0, 0.5);
+        _bar.layer.position = CGPointMake(0, 1.5 * d);
+        _bar.transform = CGAffineTransformMakeScale(0.0001, 1);
+        [track addSubview:_bar];
+        _percent = DuoText(@"0 %", 10.5, [DuoTheme text2], NO);
+        _percent.font = [DuoTheme digits:10.5 * d weight:UIFontWeightMedium];
+        _percent.textAlignment = NSTextAlignmentCenter;
+        [col addSubview:_percent];
+
+        UILabel* tip = DuoText(@"Swipe from the left edge to leave the stream", 11, [DuoTheme text3], NO);
         [self addSubview:tip];
 
-        _barWidth = [_bar.widthAnchor constraintEqualToConstant:0];
         [NSLayoutConstraint activateConstraints:@[
-            [_content.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-            [_content.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
-            [_content.widthAnchor constraintEqualToConstant:300],
-            [box.topAnchor constraintEqualToAnchor:_content.topAnchor],
-            [box.centerXAnchor constraintEqualToAnchor:_content.centerXAnchor],
-            [box.widthAnchor constraintEqualToConstant:150],
-            [box.heightAnchor constraintEqualToConstant:212],
-            [art.topAnchor constraintEqualToAnchor:box.topAnchor],
-            [art.bottomAnchor constraintEqualToAnchor:box.bottomAnchor],
-            [art.leadingAnchor constraintEqualToAnchor:box.leadingAnchor],
-            [art.trailingAnchor constraintEqualToAnchor:box.trailingAnchor],
-            [initials.leadingAnchor constraintEqualToAnchor:box.leadingAnchor constant:10],
-            [initials.trailingAnchor constraintEqualToAnchor:box.trailingAnchor constant:-10],
-            [initials.centerYAnchor constraintEqualToAnchor:box.centerYAnchor],
-            [name.topAnchor constraintEqualToAnchor:box.bottomAnchor constant:20],
-            [name.leadingAnchor constraintEqualToAnchor:_content.leadingAnchor],
-            [name.trailingAnchor constraintEqualToAnchor:_content.trailingAnchor],
-            [sub.topAnchor constraintEqualToAnchor:name.bottomAnchor constant:4],
-            [sub.leadingAnchor constraintEqualToAnchor:_content.leadingAnchor],
-            [sub.trailingAnchor constraintEqualToAnchor:_content.trailingAnchor],
-            [_track.topAnchor constraintEqualToAnchor:sub.bottomAnchor constant:26],
-            [_track.leadingAnchor constraintEqualToAnchor:_content.leadingAnchor constant:30],
-            [_track.trailingAnchor constraintEqualToAnchor:_content.trailingAnchor constant:-30],
-            [_track.heightAnchor constraintEqualToConstant:4],
-            [_bar.leadingAnchor constraintEqualToAnchor:_track.leadingAnchor],
-            [_bar.topAnchor constraintEqualToAnchor:_track.topAnchor],
-            [_bar.bottomAnchor constraintEqualToAnchor:_track.bottomAnchor],
-            _barWidth,
-            [_stage.topAnchor constraintEqualToAnchor:_track.bottomAnchor constant:12],
-            [_stage.leadingAnchor constraintEqualToAnchor:_content.leadingAnchor],
-            [_stage.trailingAnchor constraintEqualToAnchor:_content.trailingAnchor],
-            [_stage.bottomAnchor constraintEqualToAnchor:_content.bottomAnchor],
+            [col.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+            [col.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [col.widthAnchor constraintEqualToConstant:MAX(cw + 70 * d, 280 * d)],
+            [_glow.topAnchor constraintEqualToAnchor:col.topAnchor],
+            [_glow.centerXAnchor constraintEqualToAnchor:col.centerXAnchor],
+            [_glow.widthAnchor constraintEqualToConstant:cw + 70 * d],
+            [_glow.heightAnchor constraintEqualToConstant:ch + 70 * d],
+            [_coverBox.centerXAnchor constraintEqualToAnchor:_glow.centerXAnchor],
+            [_coverBox.centerYAnchor constraintEqualToAnchor:_glow.centerYAnchor],
+            [_coverBox.widthAnchor constraintEqualToConstant:cw],
+            [_coverBox.heightAnchor constraintEqualToConstant:ch],
+            [ph.leadingAnchor constraintEqualToAnchor:_coverBox.leadingAnchor constant:8 * d],
+            [ph.trailingAnchor constraintEqualToAnchor:_coverBox.trailingAnchor constant:-8 * d],
+            [ph.centerYAnchor constraintEqualToAnchor:_coverBox.centerYAnchor],
+            [iv.topAnchor constraintEqualToAnchor:_coverBox.topAnchor],
+            [iv.bottomAnchor constraintEqualToAnchor:_coverBox.bottomAnchor],
+            [iv.leadingAnchor constraintEqualToAnchor:_coverBox.leadingAnchor],
+            [iv.trailingAnchor constraintEqualToAnchor:_coverBox.trailingAnchor],
+            [name.topAnchor constraintEqualToAnchor:_glow.bottomAnchor constant:-14 * d],
+            [name.leadingAnchor constraintEqualToAnchor:col.leadingAnchor],
+            [name.trailingAnchor constraintEqualToAnchor:col.trailingAnchor],
+            [_stage.topAnchor constraintEqualToAnchor:name.bottomAnchor constant:6 * d],
+            [_stage.leadingAnchor constraintEqualToAnchor:col.leadingAnchor],
+            [_stage.trailingAnchor constraintEqualToAnchor:col.trailingAnchor],
+            [track.topAnchor constraintEqualToAnchor:_stage.bottomAnchor constant:18 * d],
+            [track.centerXAnchor constraintEqualToAnchor:col.centerXAnchor],
+            [track.widthAnchor constraintEqualToConstant:_trackW],
+            [track.heightAnchor constraintEqualToConstant:3 * d],
+            [_percent.topAnchor constraintEqualToAnchor:track.bottomAnchor constant:8 * d],
+            [_percent.centerXAnchor constraintEqualToAnchor:col.centerXAnchor],
+            [_percent.bottomAnchor constraintEqualToAnchor:col.bottomAnchor],
             [tip.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-            [tip.bottomAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.bottomAnchor constant:-18],
+            [tip.bottomAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.bottomAnchor constant:-16 * d],
         ]];
-
-        // Entry: the cover rises in.
-        _content.alpha = 0;
-        _content.transform = CGAffineTransformMakeTranslation(0, 24);
-        [UIView animateWithDuration:0.5 delay:0.05 usingSpringWithDamping:0.85 initialSpringVelocity:0 options:0 animations:^{
-            self->_content.alpha = 1;
-            self->_content.transform = CGAffineTransformIdentity;
-        } completion:nil];
-        [self setProgress:0.06];
+        [self enter];
     }
     return self;
 }
 
-- (void)setProgress:(CGFloat)p {
-    [self layoutIfNeeded];
-    _barWidth.constant = 240 * MAX(0, MIN(1, p));
-    [UIView animateWithDuration:0.35 delay:0 options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState animations:^{
-        [self layoutIfNeeded];
+- (void)enter {
+    // Calm entrance: the cover rises softly, the glow breathes slowly.
+    _coverBox.transform = CGAffineTransformConcat(CGAffineTransformMakeScale(0.86, 0.86), CGAffineTransformMakeTranslation(0, 10 * d));
+    _coverBox.alpha = 0;
+    [DuoMotion curve:CGPointMake(0.22, 1) :CGPointMake(0.36, 1) duration:0.9 delay:0 animations:^{
+        self->_coverBox.transform = CGAffineTransformIdentity;
+        self->_coverBox.alpha = 1;
     } completion:nil];
+    CABasicAnimation* p = [CABasicAnimation animationWithKeyPath:@"opacity"];
+    p.fromValue = @0.45;
+    p.toValue = @0.85;
+    p.duration = 2.2;
+    p.autoreverses = YES;
+    p.repeatCount = HUGE_VALF;
+    p.beginTime = CACurrentMediaTime() + 0.5;
+    p.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    p.fillMode = kCAFillModeBackwards;
+    [_glow.layer addAnimation:p forKey:@"pulse"];
+    _glow.alpha = 1;
+    // Starting the app on the PC: up to 30 %.
+    _target = 0.03;
+    _ceiling = 0.30;
+    _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
+    _link.preferredFrameRateRange = CAFrameRateRangeMake(30, 60, 60);
+    [_link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+/// Every frame: creep towards the ceiling, glide the bar towards the target.
+- (void)tick {
+    _target += (_ceiling - _target) * 0.0027;
+    _shown += (_target - _shown) * 0.08;
+    [self showProgress];
+}
+
+- (void)showProgress {
+    CGFloat k = MAX(0.0001, MIN(1, _shown));
+    _bar.transform = CGAffineTransformMakeScale(k, 1);
+    _percent.text = [NSString stringWithFormat:@"%ld %%", (long)MAX(1, MIN(100, lroundf(_shown * 100)))];
 }
 
 - (void)stageStarting:(NSString*)stage {
-    if (_dismissed) {
+    if (_gone) {
         return;
     }
-    _stages++;
-    NSString* text = stage.length > 0 ? [[[stage substringToIndex:1] uppercaseString] stringByAppendingString:[stage substringFromIndex:1]] : stage;
-    _stage.text = [text stringByAppendingString:@" …"];
-    [self setProgress:0.06 + 0.86 * (_stages / kStageCount)];
+    _stages = MIN(kStageCount, _stages + 1);
+    _ceiling = 0.30 + 0.65 * _stages / (CGFloat)kStageCount;
+    NSString* t = stage.length > 0 ? [[[stage substringToIndex:1] uppercaseString] stringByAppendingString:[stage substringFromIndex:1]] : @"";
+    [self setStageText:[t stringByAppendingString:@" …"]];
 }
 
 - (void)connected {
-    if (_dismissed) {
-        return;
+    if (!_gone) {
+        [self setStageText:@"Connected · waiting for the picture …"];
+        _ceiling = 0.97;
     }
-    _stage.text = @"Connected · waiting for the picture …";
-    [self setProgress:0.96];
 }
 
-- (void)dismiss {
-    if (_dismissed) {
+- (void)setStageText:(NSString*)s {
+    if ([s isEqualToString:_stage.text]) {
         return;
     }
-    _dismissed = YES;
-    [self setProgress:1];
-    [UIView animateWithDuration:0.45 delay:0.12 options:UIViewAnimationOptionCurveEaseIn animations:^{
-        self.alpha = 0;
-        self->_content.transform = CGAffineTransformMakeScale(1.15, 1.15);
-    } completion:^(BOOL finished) {
-        [self removeFromSuperview];
+    [UIView animateWithDuration:0.14 animations:^{
+        self->_stage.alpha = 0.35;
+    } completion:^(BOOL f) {
+        self->_stage.text = s;
+        [UIView animateWithDuration:0.22 animations:^{
+            self->_stage.alpha = 1;
+        }];
     }];
+}
+
+- (void)dismiss:(BOOL)connected {
+    if (_gone) {
+        return;
+    }
+    _gone = YES;
+    self.userInteractionEnabled = NO;
+    [_link invalidate];
+    _link = nil;
+    if (!connected) {
+        [DuoMotion ease:0.32 delay:0 animations:^{
+            self.alpha = 0;
+        } completion:^{
+            [self removeFromSuperview];
+        }];
+        return;
+    }
+    _shown = 1;
+    [DuoMotion ease:0.32 delay:0 animations:^{
+        self->_bar.transform = CGAffineTransformIdentity;
+    } completion:nil];
+    _percent.text = @"100 %";
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.36 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self->_glow.layer removeAllAnimations];
+        // Relaxed zoom: grows to 1.6× while fading.
+        [DuoMotion ease:0.9 delay:0 animations:^{
+            self->_coverBox.transform = CGAffineTransformMakeScale(1.6, 1.6);
+            self->_coverBox.alpha = 0;
+        } completion:nil];
+        [DuoMotion ease:0.7 delay:0 animations:^{
+            self->_glow.transform = CGAffineTransformMakeScale(1.8, 1.8);
+            self->_glow.alpha = 0;
+        } completion:nil];
+        [DuoMotion ease:0.76 delay:0.26 animations:^{
+            self.alpha = 0;
+        } completion:^{
+            [self removeFromSuperview];
+        }];
+    });
+}
+
+- (void)removeFromSuperview {
+    [_link invalidate];
+    _link = nil;
+    [super removeFromSuperview];
 }
 
 @end

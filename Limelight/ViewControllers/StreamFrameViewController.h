@@ -23,6 +23,9 @@
 /// Artemide Duo: shown on the stream-start screen.
 @property (nonatomic, nullable) UIImage* duoCover;
 @property (nonatomic, nullable, copy) NSString* duoHostName;
+@property (nonatomic, nullable, copy) NSString* duoHostUuid;
+/// Artemide Duo: what the last stream did (for the session summary on the host page).
++ (nullable NSString*)duoTakeSessionSummary;
 
 -(void)updatePreferredDisplayMode:(BOOL)streamActive;
 

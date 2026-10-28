@@ -7,6 +7,7 @@
 //
 
 #import "RelativeTouchHandler.h"
+#import "DuoSupport.h"
 
 #include <Limelight.h>
 
@@ -20,6 +21,11 @@ static const int REFERENCE_HEIGHT = 720;
     NSTimer* dragTimer;
     NSUInteger peakTouchCount;
     
+    // Artemide Duo
+    float sensX, sensY;
+    BOOL swapAxes, gestures, threeDrag;
+    float accX, accY;
+    
 #if TARGET_OS_TV
     UIGestureRecognizer* remotePressRecognizer;
     UIGestureRecognizer* remoteLongPressRecognizer;
@@ -31,6 +37,10 @@ static const int REFERENCE_HEIGHT = 720;
 - (id)initWithView:(StreamView*)view {
     self = [self init];
     self->view = view;
+    sensX = [DuoPrefs trackpadSensX] / 100.0f;
+    sensY = [DuoPrefs trackpadSensY] / 100.0f;
+    swapAxes = [DuoPrefs trackpadSwapAxis];
+    gestures = [DuoPrefs touchGestures];
     
 #if TARGET_OS_TV
     remotePressRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(remoteButtonPressed:)];
@@ -65,7 +75,7 @@ static const int REFERENCE_HEIGHT = 720;
         UITouch *touch = [[event allTouches] anyObject];
         originalLocation = touchLocation = [touch locationInView:view];
         if (!isDragging) {
-            dragTimer = [NSTimer scheduledTimerWithTimeInterval:0.650
+            dragTimer = [NSTimer scheduledTimerWithTimeInterval:[DuoPrefs dragHoldMs] / 1000.0
                                                      target:self
                                                    selector:@selector(onDragStart:)
                                                    userInfo:nil
@@ -78,6 +88,41 @@ static const int REFERENCE_HEIGHT = 720;
         
         originalLocation = touchLocation = CGPointMake((firstLocation.x + secondLocation.x) / 2, (firstLocation.y + secondLocation.y) / 2);
     }
+    else if ([[event allTouches] count] == 3 && gestures) {
+        // Artemide Duo: 3 fingers = drag (left button held while they move).
+        [dragTimer invalidate];
+        dragTimer = nil;
+        originalLocation = touchLocation = [self centerOf:[event allTouches]];
+    }
+}
+
+- (CGPoint)centerOf:(NSSet*)touches {
+    CGFloat x = 0, y = 0;
+    for (UITouch* t in touches) {
+        CGPoint p = [t locationInView:view];
+        x += p.x;
+        y += p.y;
+    }
+    NSUInteger n = MAX(1, touches.count);
+    return CGPointMake(x / n, y / n);
+}
+
+- (void)sendMoveFrom:(CGPoint)a to:(CGPoint)b {
+    float dx = (b.x - a.x) * (REFERENCE_WIDTH / view.bounds.size.width) * sensX;
+    float dy = (b.y - a.y) * (REFERENCE_HEIGHT / view.bounds.size.height) * sensY;
+    if (swapAxes) {
+        float t = dx;
+        dx = dy;
+        dy = t;
+    }
+    accX += dx;
+    accY += dy;
+    int ix = (int)accX, iy = (int)accY;
+    if (ix != 0 || iy != 0) {
+        LiSendMouseMoveEvent(ix, iy);
+        accX -= ix;
+        accY -= iy;
+    }
 }
 
 - (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
@@ -88,11 +133,8 @@ static const int REFERENCE_HEIGHT = 720;
         if (touchLocation.x != currentLocation.x ||
             touchLocation.y != currentLocation.y)
         {
-            int deltaX = (currentLocation.x - touchLocation.x) * (REFERENCE_WIDTH / view.bounds.size.width);
-            int deltaY = (currentLocation.y - touchLocation.y) * (REFERENCE_HEIGHT / view.bounds.size.height);
-            
-            if (deltaX != 0 || deltaY != 0) {
-                LiSendMouseMoveEvent(deltaX, deltaY);
+            {
+                [self sendMoveFrom:touchLocation to:currentLocation];
                 touchLocation = currentLocation;
                 
                 // If we've moved far enough to confirm this wasn't just human/machine error,
@@ -118,12 +160,32 @@ static const int REFERENCE_HEIGHT = 720;
         }
         
         touchLocation = avgLocation;
+    } else if ([[event allTouches] count] == 3 && gestures) {
+        CGPoint c = [self centerOf:[event allTouches]];
+        if (!threeDrag && [self isConfirmedMove:c from:originalLocation]) {
+            threeDrag = YES;
+            touchMoved = true;
+            LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_LEFT);
+        }
+        if (threeDrag) {
+            [self sendMoveFrom:touchLocation to:c];
+        }
+        touchLocation = c;
     }
+}
+
+- (BOOL)wasThreeFingerTap {
+    return peakTouchCount == 3 && !touchMoved && !threeDrag;
 }
 
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
     [dragTimer invalidate];
     dragTimer = nil;
+    if (threeDrag && [[event allTouches] count] == [touches count]) {
+        threeDrag = NO;
+        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
+        return;
+    }
     if (isDragging) {
         isDragging = false;
         LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
@@ -173,6 +235,10 @@ static const int REFERENCE_HEIGHT = 720;
 - (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
     [dragTimer invalidate];
     dragTimer = nil;
+    if (threeDrag) {
+        threeDrag = NO;
+        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
+    }
     if (isDragging) {
         isDragging = false;
         LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);

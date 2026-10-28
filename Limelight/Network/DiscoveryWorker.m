@@ -7,6 +7,8 @@
 //
 
 #import "DiscoveryWorker.h"
+#import "DuoSupport.h"
+#import "Utils.h"
 #import "Utils.h"
 #import "HttpManager.h"
 #import "ServerInfoResponse.h"
@@ -80,7 +82,14 @@ static const float POLL_RATE = 2.0f; // Poll every 2 seconds
         }
     }
     
-    return array;
+    // Artemide Duo: try the local network before Tailscale (faster, no relay).
+    NSMutableArray* lan = [NSMutableArray array];
+    NSMutableArray* ts = [NSMutableArray array];
+    for (NSString* addr in array) {
+        [([DuoPrefs isTailscaleAddress:[Utils addressPortStringToAddress:addr]] ? ts : lan) addObject:addr];
+    }
+    [lan addObjectsFromArray:ts];
+    return lan;
 }
 
 - (void) discoverHost {

@@ -7,6 +7,10 @@
 //
 
 #import "AppDelegate.h"
+#if !TARGET_OS_TV
+#import "DuoSupport.h"
+extern UIInterfaceOrientationMask DuoStreamOrientationMask;
+#endif
 
 @implementation AppDelegate
 
@@ -28,9 +32,28 @@ static NSString* DB_NAME = @"Limelight_iOS.sqlite";
     if (shortcut != nil) {
         _pcUuidToLoad = (NSString*)[shortcut.userInfo objectForKey:@"UUID"];
     }
+    // Artemide Duo: Inter, dark alerts / sheets in the accent colour.
+    [DuoTheme registerFonts];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (UIWindow* w in application.windows) {
+            w.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+            w.tintColor = [DuoTheme accent];
+            w.backgroundColor = [DuoTheme floor];
+        }
+    });
 #endif
     return YES;
 }
+
+#if !TARGET_OS_TV
+- (UIInterfaceOrientationMask)application:(UIApplication *)application supportedInterfaceOrientationsForWindow:(UIWindow *)window {
+    // Landscape, unless "Portrait streaming" is on (then a running stream keeps its orientation).
+    if (DuoStreamOrientationMask != 0) {
+        return [DuoPrefs autoOrientation] ? DuoStreamOrientationMask : UIInterfaceOrientationMaskLandscape;
+    }
+    return [DuoPrefs autoOrientation] ? UIInterfaceOrientationMaskAllButUpsideDown : UIInterfaceOrientationMaskLandscape;
+}
+#endif
 
 #if !TARGET_OS_TV
 - (void)application:(UIApplication *)application performActionForShortcutItem:(UIApplicationShortcutItem *)shortcutItem completionHandler:(void (^)(BOOL succeeded))completionHandler {

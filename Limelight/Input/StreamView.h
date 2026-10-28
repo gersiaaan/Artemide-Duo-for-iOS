@@ -29,6 +29,8 @@
                   config:(StreamConfiguration*)streamConfig;
 - (void) showOnScreenControls;
 - (OnScreenControlsLevel) getCurrentOscState;
+/// Artemide Duo: open / close the keyboard (3-finger tap, stream menu, controller shortcut).
+- (void) toggleKeyboard;
 
 #if !TARGET_OS_TV
 - (void) updateCursorLocation:(CGPoint)location isMouse:(BOOL)isMouse;

@@ -21,6 +21,7 @@ typedef struct {
     int framesWithHostProcessingLatency;
     int maxHostProcessingLatency;
     int minHostProcessingLatency;
+    long long receivedBytes;
 } video_stats_t;
 
 @interface Connection : NSOperation <NSStreamDelegate>
@@ -30,5 +31,7 @@ typedef struct {
 -(void) main;
 -(BOOL) getVideoStats:(video_stats_t*)stats;
 -(NSString*) getActiveCodecName;
+/// Artemide Duo: video bytes received since the stream started.
+-(long long) duoTotalBytes;
 
 @end
